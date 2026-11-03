@@ -7,6 +7,7 @@ import { optionLabel } from './lists.js'
 import { PROPOSAL_STATUS as PS, getStatus } from './status.js'
 import { ROLE } from './roles.js'
 import { followUpDue } from './tracker.js'
+import { isDeadlinePending } from './metrics.js'
 
 export const LONG_WITH_ME_DAYS = 14
 
@@ -49,7 +50,9 @@ export function daysWithMe(r, today, now = new Date()) {
   if (r.status === PS.POSTPONED && r.followUpOn) {
     days = Math.max(0, Math.round((new Date(`${today}T00:00:00Z`) - new Date(`${r.followUpOn}T00:00:00Z`)) / 86400000))
   }
-  const late = r.requiredBy ? r.requiredBy < today : (days ?? 0) > LONG_WITH_ME_DAYS
+  // Red past the proposal deadline while the AM still owes it; otherwise (no deadline, or the AM has handed
+  // the proposal over: BD's "Share with client", a follow-up) red after 14 days.
+  const late = r.requiredBy && isDeadlinePending(r) ? r.requiredBy < today : (days ?? 0) > LONG_WITH_ME_DAYS
   return { days, late }
 }
 

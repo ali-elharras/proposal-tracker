@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Card from '../ui/Card.jsx'
+import ConfirmDialog from '../ui/ConfirmDialog.jsx'
 import { useOccasions } from '../../data/hooks.js'
 import { formatShortDate } from '../../lib/format.js'
 
@@ -17,6 +18,13 @@ export default function OccasionsEditor() {
     setMessage(result.ok ? `${o.name}: dates saved.` : Object.values(result.errors ?? {})[0] ?? result.error)
     if (result.ok) setDraft((x) => ({ ...x, [o.id]: {} }))
   }
+  const [removing, setRemoving] = useState(null) // { occasion, period }
+  const remove = async () => {
+    const { occasion, period } = removing
+    setRemoving(null)
+    const result = await occasions.removePeriod(period.id)
+    setMessage(result?.ok === false ? result.error : `${occasion.name}: dates removed.`)
+  }
   const set = (id, key) => (e) => setDraft((x) => ({ ...x, [id]: { ...(x[id] ?? {}), [key]: e.target.value } }))
   return (
     <Card title="Occasions" subtitle="Start and end dates for each year: the radar uses them for “likely to book soon”">
@@ -28,7 +36,7 @@ export default function OccasionsEditor() {
               <span className="muted">
                 {o.periods.length ? o.periods.map((p) => (
                   <span key={p.id} className="occasion-period">{formatShortDate(p.startsOn)} – {formatShortDate(p.endsOn)}{' '}
-                    <button type="button" className="link-btn" onClick={() => occasions.removePeriod(p.id)} aria-label={`Remove ${o.name} ${p.startsOn}`}>remove</button></span>
+                    <button type="button" className="link-btn" onClick={() => setRemoving({ occasion: o, period: p })} aria-label={`Remove ${o.name} ${p.startsOn}`}>remove</button></span>
                 )) : 'No dates yet'}
               </span></span>
             <span className="inline-form">
@@ -39,6 +47,10 @@ export default function OccasionsEditor() {
           </li>
         ))}
       </ul>
+      <ConfirmDialog open={Boolean(removing)} title={`Remove these ${removing?.occasion.name ?? ''} dates?`} confirmLabel="Remove" tone="danger"
+        onCancel={() => setRemoving(null)} onConfirm={remove}>
+        <p>{removing ? `${formatShortDate(removing.period.startsOn)} – ${formatShortDate(removing.period.endsOn)}. ` : ''}The radar stops using them.</p>
+      </ConfirmDialog>
     </Card>
   )
 }

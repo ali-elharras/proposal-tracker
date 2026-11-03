@@ -7,6 +7,7 @@ import StatusBadge from '../ui/StatusBadge.jsx'
 import { PROPOSAL_STATUS, getStatus, lostReasonLabel, shareChannelLabel } from '../../domain/status.js'
 import { roleLabel } from '../../domain/roles.js'
 import { timeline } from '../../domain/proposals.js'
+import { eventLine, eventNote } from '../../domain/eventWords.js'
 import { formatCurrency, formatDate, formatDateTime, formatRelativeTime } from '../../lib/format.js'
 
 // Codes chosen with an action, shown in words on its history entry.
@@ -96,8 +97,7 @@ export default function ActivityTimeline({ request, usersById }) {
   )
 }
 
-/** A recorded event that is not a status change: the BD owner moved with a client transfer, the assigned
- * AM changed when an Account Manager was deactivated, or the request moved when its client was merged. */
+/** A recorded event that is not a status change (owner moved, reminder sent, event postponed…), in words. */
 function EventItem({ event, user, usersById }) {
   return (
     <li className="timeline__item">
@@ -108,15 +108,9 @@ function EventItem({ event, user, usersById }) {
         <div className="timeline__line">
           <strong>{user?.name ?? 'Unknown user'}</strong>
           <span className="muted"> ({roleLabel(event.role, user)})</span>{' '}
-          {event.event === 'bd_owner_transferred'
-            ? <>moved the BD owner from {usersById[event.fromUser]?.name ?? event.fromUser} to {usersById[event.toUser]?.name ?? event.toUser}</>
-            : event.event === 'assigned_am_changed'
-              ? <>moved the request from {usersById[event.fromUser]?.name ?? event.fromUser} to {usersById[event.toUser]?.name ?? event.toUser} (Account Manager)</>
-              : event.event === 'client_merged' ? <>merged its client into another</>
-                : event.event === 'waiting_on_set' ? <>set who it is waiting on</>
-                  : event.event === 'waiting_on_cleared' ? <>marked it done (waiting on is automatic again)</> : event.event}
+          {eventLine(event, usersById)}
         </div>
-        {event.note && <blockquote className="timeline__note">{event.note}</blockquote>}
+        {eventNote(event) && <blockquote className="timeline__note">{eventNote(event)}</blockquote>}
         <time className="timeline__time" dateTime={event.changedAt}>
           {formatDateTime(event.changedAt)} · {formatRelativeTime(event.changedAt)}
         </time>

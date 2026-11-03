@@ -27,6 +27,19 @@ test('7: Due by date groups open requests by deadline, overdue first', () => {
   assert.equal(deadlineTone(rows[2], TODAY), 'soon')
 })
 
+test('Due by date: a deadline the AM no longer owes is never "overdue"', () => {
+  const rows = [
+    req('late', { requiredBy: '2026-10-20' }),
+    req('ready', { status: 'ready_for_bd', requiredBy: '2026-10-20' }),
+    req('shared', { status: 'shared_with_client', requiredBy: '2026-10-21' }),
+    req('postponed', { status: 'postponed', requiredBy: '2026-10-22' }),
+  ]
+  const g = dueGroups(rows, TODAY)
+  assert.deepEqual(g.map((x) => `${x.label} · ${x.count}`), ['Overdue · 1', 'Proposal handed over · 3'])
+  assert.deepEqual(deadlineSummary(rows, TODAY), { total: 4, overdue: 1, dueThisWeek: 0 })
+  assert.equal(deadlineTone(rows[1], TODAY), null)
+})
+
 test('8: the queue board puts each of my open proposals in one column; closed ones are not on it', () => {
   const rows = [
     req('new', { status: 'submitted' }), req('prep'), req('rev', { status: 'revision_requested' }),

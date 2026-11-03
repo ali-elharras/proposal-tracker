@@ -7,6 +7,9 @@ import DataTable from '../components/ui/DataTable.jsx'
 import KpiCard from '../components/dashboard/KpiCard.jsx'
 import { SkeletonCards, SkeletonList } from '../components/ui/Skeleton.jsx'
 import Tabs from '../components/ui/Tabs.jsx'
+import Icon from '../components/ui/Icon.jsx'
+import SegmentedControl from '../components/ui/SegmentedControl.jsx'
+import { FilterBar, FilterMenu } from '../components/ui/Filters.jsx'
 import { ClientEvent } from '../components/dashboard/cells.jsx'
 import { FunnelStrip, RadarCount } from './dashboards/FocusedHome.jsx'
 import { usePageDescription } from './PlaceholderPage.jsx'
@@ -26,6 +29,8 @@ import { proposalLink } from '../lib/links.js'
 import useTab from '../lib/useTab.js'
 
 const monthLabel = (ym) => new Date(`${ym}-01T00:00:00Z`).toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' })
+/** Shown as bars in the pipeline, so not repeated as cards. */
+const IN_FUNNEL = ['received', 'sent', 'won', 'wonValue'] // (Confirmed value is one of the value cards)
 const RESULT_TABS = [{ id: 'won', label: 'Confirmed' }, { id: 'lost', label: 'Lost' }, { id: 'postponed', label: 'Postponed' }]
 export const ANALYTICS_TABS = [
   { id: 'overview', label: 'Overview' },
@@ -104,58 +109,42 @@ export function Analytics({ mine = false }) {
 
   return (
     <>
-      <div className="page-toolbar analytics-toolbar">
-        <label className="form-field">
-          <span className="form-field__label">Period</span>
-          <select value={period} onChange={(e) => set({ period: e.target.value === 'year' ? '' : e.target.value })}>
-            {PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
-        </label>
+      <FilterBar
+        active={[brand, person].filter(Boolean).length}
+        onClear={() => set({ brand: '', person: '', as: '' })}
+        end={company && ['bd', 'am'].includes(active) ? <button type="button" className="btn btn--sm" onClick={download}><Icon name="arrowDown" size={14} /> Download CSV</button> : null}
+      >
+        <SegmentedControl label="Period" value={period} onChange={(v) => set({ period: v === 'year' ? '' : v })}
+          options={PERIODS.map((p) => ({ value: p.id, label: p.label }))} />
         {scope.kind === 'company' && (
-          <label className="form-field">
-            <span className="form-field__label">Brand</span>
-            <select value={brand} onChange={(e) => set({ brand: e.target.value })}>
-              <option value="">Both brands</option>
-              {(analytics.data.brands ?? BRANDS.map((b) => b.id)).map((id) => <option key={id} value={id}>{getBrand(id)?.name}</option>)}
-            </select>
-          </label>
+          <FilterMenu label="Brand" value={brand} anyLabel="Both brands" onChange={(v) => set({ brand: v })}
+            options={(analytics.data.brands ?? BRANDS.map((b) => b.id)).map((id) => ({ value: id, label: getBrand(id)?.name ?? id }))} />
         )}
         {management && (
-          <label className="form-field">
-            <span className="form-field__label">Scorecard</span>
-            <select value={personValue} onChange={(e) => {
-              const [id, kind] = e.target.value.split(':')
-              set({ person: id || '', as: kind || '' })
-            }}>
-              <option value="">The company</option>
-              <optgroup label="Business Development">
-                {people.filter((p) => p.as === 'bd').map((p) => <option key={`${p.id}:bd`} value={`${p.id}:bd`}>{nameOf(p)}</option>)}
-              </optgroup>
-              <optgroup label="Account Managers">
-                {people.filter((p) => p.as === 'am').map((p) => <option key={`${p.id}:am`} value={`${p.id}:am`}>{nameOf(p)}</option>)}
-              </optgroup>
-            </select>
-          </label>
+          <FilterMenu label="Scorecard" value={personValue} anyLabel="The company" icon="user"
+            onChange={(v) => { const [id, kind] = (v || '').split(':'); set({ person: id || '', as: kind || '' }) }}
+            options={[
+              ...people.filter((p) => p.as === 'bd').map((p) => ({ value: `${p.id}:bd`, label: nameOf(p), hint: 'BD' })),
+              ...people.filter((p) => p.as === 'am').map((p) => ({ value: `${p.id}:am`, label: nameOf(p), hint: 'AM' })),
+            ]} />
         )}
-        {company && ['bd', 'am'].includes(active) && <button type="button" className="btn" onClick={download}>Download CSV</button>}
-      </div>
+      </FilterBar>
       {shown.length > 1 && (
         <Tabs label="Analytics" value={active} onChange={setTab} tabs={ANALYTICS_TABS.filter((t) => shown.includes(t.id))} />
       )}
 
       {active === 'overview' && (
         <>
-          <FunnelStrip requests={requests} period={period} onPeriod={(p) => set({ period: p === 'year' ? '' : p })} today={today} scopeLabel={scopeName} />
+          {/* The counts live in the pipeline; the cards add what it cannot show: rates and values. */}
           <div className="kpi-grid">
-            {card.headline.map((h) => (
-              <KpiCard key={h.id} label={h.label} icon="chart" value={h.money ? formatTotal(h.value, h.priced) : String(h.value)} note={h.note} />
+            {card.headline.filter((h) => !IN_FUNNEL.includes(h.id)).map((h) => (
+              <KpiCard key={h.id} label={h.label} icon={h.money ? 'trophy' : 'chart'} value={h.money ? formatTotal(h.value, h.priced) : String(h.value)} note={h.note} />
             ))}
-          </div>
-          <div className="kpi-grid">
             {valueCards(requests, period, today).map((v) => (
-              <KpiCard key={v.id} label={v.label} icon="chart" value={formatTotal(v.value, v.priced)} note={`Based on ${v.priced} of ${v.count} with a price`} />
+              <KpiCard key={v.id} label={v.label} icon="briefcase" value={formatTotal(v.value, v.priced)} note={`Based on ${v.priced} of ${v.count} with a price`} />
             ))}
           </div>
+          <FunnelStrip requests={requests} period={period} today={today} scopeLabel={scopeName[0].toUpperCase() + scopeName.slice(1)} showPeriod={false} />
           {!mine && <RadarCount />}
           <Card title="By month" subtitle={`Received, confirmed and lost · ${periodLabel.toLowerCase()}`}>
             <div className="mini-bars mini-bars--three" role="img"

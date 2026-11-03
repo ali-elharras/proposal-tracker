@@ -3,7 +3,7 @@ import { brandEdge } from './BrandTag.jsx'
 import { isPlainClick, usePeek } from '../../lib/peek.js'
 
 /**
- * Compact table. Scrolls horizontally inside its card on narrow screens.
+ * Compact table. On phones each row becomes a small card: every cell under its column name (data-label).
  * columns: [{ key, header, render(row), align: 'start'|'end', nowrap }]
  * rowHref(row): optional; makes the whole row open that link (keyboard: Enter).
  * rowPeek(row): optional peek token (lib/peek.js); a plain click or Enter opens the quick peek instead,
@@ -56,6 +56,7 @@ export default function DataTable({ columns, rows, rowKey, rowHref, rowPeek, row
                 {columns.map((c) => (
                   <td
                     key={c.key}
+                    data-label={typeof c.header === 'string' ? c.header : undefined}
                     className={[c.align === 'end' && 'is-end', c.nowrap && 'is-nowrap'].filter(Boolean).join(' ') || undefined}
                   >
                     {c.render(row)}

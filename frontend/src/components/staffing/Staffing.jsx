@@ -2,17 +2,19 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import Card from '../ui/Card.jsx'
 import SidePanel from '../ui/SidePanel.jsx'
+import ConfirmDialog from '../ui/ConfirmDialog.jsx'
 import { Field, FormAlert, PanelButtons, usePanelForm } from '../crm/formParts.jsx'
 import { useEventStaffing, useFacilitators, useLists } from '../../data/hooks.js'
 import { BRANDS } from '../../domain/brands.js'
 import { visibleOptions } from '../../domain/lists.js'
 import { possibleDuplicates, validateRating } from '../../domain/staffing.js'
+import { tidyPhone } from '../../domain/smartDefaults.js'
 
 const rating = (f) => (f.average === null || f.average === undefined ? 'no ratings yet'
   : `★ ${f.average.toFixed(1)} from ${f.ratingCount}`)
 
 /** Name, phone (required), reference, skills, brands, notes: the short form, alone or while assigning. */
-function FacilitatorFields({ form, prefix }) {
+function FacilitatorFields({ form, prefix, withNotes = true }) {
   const lists = useLists().data
   const { values, set, errors, fieldProps } = form
   const toggle = (key, code) => set(key)(values[key].includes(code) ? values[key].filter((c) => c !== code) : [...values[key], code])
@@ -45,7 +47,7 @@ function FacilitatorFields({ form, prefix }) {
           ))}
         </div>
       </fieldset>
-      <Field id={`${prefix}-notes`} label="Notes (optional)"><textarea rows={2} maxLength={2000} value={values.notes} onChange={set('notes')} /></Field>
+      {withNotes && <Field id={`${prefix}-notes`} label="Notes (optional)"><textarea rows={2} maxLength={2000} value={values.notes} onChange={set('notes')} /></Field>}
     </>
   )
 }
@@ -78,7 +80,7 @@ export function AddFacilitatorPanel({ onClose }) {
 }
 
 /**
- * "Assign facilitators" on an event (HR, Noha): type a name; matching facilitators show with their rating and
+ * "Assign facilitators" on an event (HR, Operations): type a name; matching facilitators show with their rating and
  * events attended (and whether they are booked that day). None matching: "+ Add '<name>' as a new facilitator"
  * (saved permanently and assigned in one step). A same-day booking is a warning, never a block.
  */
@@ -107,7 +109,7 @@ function AssignPanel({ event, onClose, onDone }) {
     const local = {}
     if (!values.name.trim()) local.name = 'Enter the name.'
     if (!values.phone.trim()) local.phone = 'Enter the phone number.'
-    submit(local, () => staffing.addAndAssign({ ...values, confirmDuplicate: values.confirmDuplicate || dupes.length > 0 && values.confirmDuplicate }),
+    submit(local, () => staffing.addAndAssign(values),
       (result) => { setNote([result.message, ...(result.warnings ?? []).map((w) => w.message)].join(' ')); setAdding(false); onDone() })
   }
   return (
@@ -183,7 +185,7 @@ function RatePanel({ event, facilitator, onClose, onDone }) {
 
 /**
  * The event page's staffing: "N needed · M assigned · K missing", the suggestion from the ratio (labelled, not
- * saved until confirmed), the assigned list (Operations and Noha see it too), assigning (HR, Noha) and rating.
+ * saved until confirmed), the assigned list (Operations sees it too), assigning (HR, Operations) and rating.
  */
 export function EventStaffingCard({ event, onChanged }) {
   const st = event.staffing
@@ -191,9 +193,15 @@ export function EventStaffingCard({ event, onChanged }) {
   const [panel, setPanel] = useState(null) // 'assign' | { rate: facilitator }
   const [value, setValue] = useState(st?.needed ?? '')
   const [note, setNote] = useState(null)
+  const [removing, setRemoving] = useState(null) // the facilitator to take off this event
+  const saved = st?.needed ?? ''
+  const [lastSaved, setLastSaved] = useState(saved)
+  if (saved !== lastSaved) { setLastSaved(saved); setValue(saved) } // someone else changed it: show the new number
   if (!st) return null
   const save = async (v) => {
-    const result = await staffing.setNeeded(v === '' ? null : Number(v))
+    const raw = String(v).trim()
+    if (raw !== '' && !/^\d+$/.test(raw)) { setNote('Enter a whole number.'); return }
+    const result = await staffing.setNeeded(raw === '' ? null : Number(raw))
     setNote(result.ok ? 'Saved. HR is told.' : Object.values(result.errors ?? {})[0] ?? result.error)
     if (result.ok) onChanged?.()
   }
@@ -218,22 +226,33 @@ export function EventStaffingCard({ event, onChanged }) {
           {st.facilitators.map((f) => (
             <li key={f.id}>
               <span className="stack"><Link to={`/facilitators/${f.id}`}>{f.name}</Link>
+                {f.phone && <a className="muted tel-link" href={`tel:${f.phone.replace(/[^\d+]/g, '')}`}>{tidyPhone(f.phone)}</a>}
                 {f.ratings?.length > 0 && <span className="muted">{f.ratings.map((r) => `${r.attended ? `★${r.stars}` : 'did not attend'} (${r.rater})`).join(' · ')}</span>}</span>
               <span className="next-step__buttons">
                 {st.canRate && <button type="button" className="btn btn--sm" onClick={() => setPanel({ rate: f })}>Rate</button>}
-                {st.canAssign && <button type="button" className="link-btn" onClick={async () => { await staffing.remove(f.id); onChanged?.() }}>Remove</button>}
+                {st.canAssign && <button type="button" className="link-btn link-btn--quiet" onClick={() => setRemoving(f)}>Remove</button>}
               </span>
             </li>
           ))}
         </ul>
       )}
+      <ConfirmDialog open={Boolean(removing)} title={`Remove ${removing?.name ?? ''} from this event?`} confirmLabel="Remove" tone="danger"
+        onCancel={() => setRemoving(null)}
+        onConfirm={async () => {
+          const result = await staffing.remove(removing.id)
+          setRemoving(null)
+          setNote(result?.ok === false ? result.error : `${removing.name} removed.`)
+          if (result?.ok !== false) onChanged?.()
+        }}>
+        <p>They stay in the facilitators list; only this assignment ends.</p>
+      </ConfirmDialog>
       {panel === 'assign' && <AssignPanel event={event} onClose={() => setPanel(null)} onDone={() => onChanged?.()} />}
       {panel?.rate && <RatePanel event={event} facilitator={panel.rate} onClose={() => setPanel(null)} onDone={() => onChanged?.()} />}
     </Card>
   )
 }
 
-/** "Edit details" on the profile (HR, Noha). */
+/** "Edit details" on the profile (HR, Operations). */
 export function EditFacilitatorPanel({ facilitator, update, onClose }) {
   const form = usePanelForm({ name: facilitator.name, phone: facilitator.phone, reference: facilitator.reference ?? '',
     skills: facilitator.skills, brands: facilitator.brands, notes: '' })
@@ -248,7 +267,8 @@ export function EditFacilitatorPanel({ facilitator, update, onClose }) {
       footer={<PanelButtons formId="edit-fac" busy={busy} onCancel={onClose} submitLabel="Save" />}>
       <form id="edit-fac" className="stack-form" onSubmit={onSubmit} noValidate>
         <FormAlert failure={failure} />
-        <FacilitatorFields form={form} prefix="ef" />
+        {/* Notes are added on the profile (each one is kept with its author), not edited here. */}
+        <FacilitatorFields form={form} prefix="ef" withNotes={false} />
       </form>
     </SidePanel>
   )

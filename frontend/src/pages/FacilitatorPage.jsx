@@ -12,11 +12,12 @@ import { optionLabel } from '../domain/lists.js'
 import { formatEventDate, formatShortDate } from '../lib/format.js'
 import RelTime from '../components/ui/RelTime.jsx'
 import { stars } from './FacilitatorsPage.jsx'
+import { tidyPhone } from '../domain/smartDefaults.js'
 import { EditFacilitatorPanel } from '../components/staffing/Staffing.jsx'
 
 /**
  * One facilitator: details, then on one page (nothing collapsed): upcoming assignments · events history ·
- * feedback · rating over time (3+ ratings) · notes (HR only, with their history). HR and Noha can edit,
+ * feedback · rating over time (3+ ratings) · notes (HR only, with their history). HR and Operations can edit,
  * mark inactive / active and add notes.
  */
 export default function FacilitatorPage() {
@@ -57,13 +58,14 @@ export default function FacilitatorPage() {
     <PageLayout title={p.name}
       subtitle={[p.status === 'active' ? 'Active' : 'Inactive', p.brands.map((b) => getBrand(b)?.name).join(' · ')].filter(Boolean).join(' · ')}
       actions={p.canManage ? <MoreMenu items={[{ label: 'Edit details', onSelect: () => setEditing(true) },
-        { label: p.status === 'active' ? 'Mark inactive' : 'Mark active', onSelect: toggle }]} /> : null}>
+        { label: p.status === 'active' ? 'Mark inactive' : 'Mark active', onSelect: toggle }]} /> : null}
+      crumbs={[{ label: 'Facilitators', to: '/facilitators' }, { label: p.name }]}>
       {editing && <EditFacilitatorPanel facilitator={p} update={f.update} onClose={() => setEditing(false)} />}
-      <nav className="breadcrumb" aria-label="Breadcrumb"><Link to="/facilitators">Facilitators</Link><span aria-hidden="true">/</span><span aria-current="page">{p.name}</span></nav>
       {message && <p className="muted" role="status">{message}</p>}
       <Card>
         <dl className="field-list">
-          <div className="field"><dt>Phone</dt><dd>{p.phone} <button type="button" className="link-btn" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button></dd></div>
+          <div className="field"><dt>Phone</dt><dd><a href={`tel:${p.phone.replace(/[^\d+]/g, '')}`}>{tidyPhone(p.phone)}</a>{' '}
+            <button type="button" className="link-btn" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button></dd></div>
           <div className="field"><dt>Skills</dt><dd>{p.skills.length ? p.skills.map((s) => optionLabel(lists, 'facilitatorSkills', s)).join(', ') : '—'}</dd></div>
           <div className="field"><dt>Events attended</dt><dd className="tabular">{p.eventsAttended}</dd></div>
           {'average' in p && <div className="field"><dt>Rating</dt><dd>{stars(p)}</dd></div>}

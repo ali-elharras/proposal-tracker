@@ -8,7 +8,8 @@ import Toast, { useToast } from '../components/ui/Toast.jsx'
 import RoutingForm from '../components/accounts/RoutingForm.jsx'
 import ListsEditor from '../components/accounts/ListsEditor.jsx'
 import OccasionsEditor from '../components/accounts/OccasionsEditor.jsx'
-import StatusBadge from '../components/ui/StatusBadge.jsx'
+import Tabs from '../components/ui/Tabs.jsx'
+import useTab from '../lib/useTab.js'
 import { Person } from '../components/dashboard/cells.jsx'
 import { usePageDescription } from './PlaceholderPage.jsx'
 import { useConfig, useLookups, useRouting } from '../data/hooks.js'
@@ -18,9 +19,17 @@ import RelTime from '../components/ui/RelTime.jsx'
 import { findNavItem } from '../navigation.js'
 
 /**
- * Settings (people with "Manage accounts"). Routing is editable: which Account Manager receives
- * each brand's new requests (every change is kept). The rest is the business configuration, read-only.
+ * Settings (people with "Manage accounts"), in tabs: Routing (which Account Manager receives each brand's
+ * new requests; every change is kept) · Dropdown lists · Occasions (for the radar) · Reference (the business
+ * configuration, read-only: brands, stages, lost reasons, files).
  */
+const SETTINGS_TABS = [
+  { id: 'routing', label: 'Routing' },
+  { id: 'lists', label: 'Dropdown lists' },
+  { id: 'occasions', label: 'Occasions' },
+  { id: 'reference', label: 'Reference' },
+]
+
 function Settings() {
   const { data: config } = useConfig()
   const { usersById } = useLookups()
@@ -33,24 +42,15 @@ function Settings() {
   const subtitle = usePageDescription(findNavItem('/settings'))
   const stages = [...config.proposalStages].sort((a, b) => a.order - b.order)
   const statusesByStage = (stageId) => config.proposalStatuses.filter((s) => s.stage === stageId)
+  const [tab, setTab] = useTab(SETTINGS_TABS.map((t) => t.id))
 
   return (
     <PageLayout title="Settings" subtitle={subtitle}>
       <AdminTabs />
+      <Tabs label="Settings sections" value={tab} onChange={setTab} tabs={SETTINGS_TABS} />
+      {tab === 'routing' && (
       <div className="dash-grid">
-        <div className="span-6">
-          <Card title="Brands & services">
-            <ul className="settings-list">
-              {config.brands.map((b) => (
-                <li key={b.id}>
-                  <strong>{b.name}:</strong>
-                  <span>{b.services.map((s) => s.label).join(' · ')}</span>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        </div>
-        <div className="span-6">
+        <div className="span-8">
           <Card title="Proposal routing" subtitle="Each brand's new requests go to one Account Manager">
             <ul className="settings-list">
               {items.map((item) => {
@@ -85,6 +85,34 @@ function Settings() {
             )}
           </Card>
         </div>
+      </div>
+      )}
+      {tab === 'lists' && <ListsEditor onMessage={toast.show} />}
+      {tab === 'occasions' && <OccasionsEditor />}
+      {tab === 'reference' && (
+      <div className="dash-grid">
+        <div className="span-6">
+          <Card title="Brands & services">
+            <ul className="settings-list">
+              {config.brands.map((b) => (
+                <li key={b.id}>
+                  <strong>{b.name}:</strong>
+                  <span>{b.services.map((s) => s.label).join(' · ')}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
+        <div className="span-6">
+          <Card title="Proposal files and sharing">
+            <ul className="settings-list">
+              <li><strong>File types:</strong> {config.proposalFiles.types.map((t) => `${t.label} (${t.extension})`).join(' · ')}</li>
+              <li><strong>Maximum size:</strong> {Math.round(config.proposalFiles.maxBytes / (1024 * 1024))} MB</li>
+              <li><strong>Shared via:</strong> {config.shareChannels.map((c) => c.label).join(' · ')}</li>
+              <li><strong>Time zone:</strong> {config.businessTimezone} · <strong>Currency:</strong> {config.currency}</li>
+            </ul>
+          </Card>
+        </div>
         <div className="span-6">
           <Card title="Proposal stages and statuses" subtitle="The stage is what people see; the detailed status drives the workflow">
             <ul className="settings-list">
@@ -100,36 +128,14 @@ function Settings() {
           </Card>
         </div>
         <div className="span-6">
-          <Card title="Opportunity stages">
-            <ul className="settings-list">
-              {config.opportunityStages.map((s) => (
-                <li key={s.id}><StatusBadge kind="opportunity" status={s.id} /></li>
-              ))}
-            </ul>
-          </Card>
-        </div>
-        <div className="span-6">
           <Card title="Lost reasons" subtitle="Chosen when a proposal is marked lost">
             <ul className="settings-list">
-              {config.lostReasons.map((r) => <li key={r.id}>{r.label}</li>)}
+              {config.lostReasons.filter((r) => !r.importOnly).map((r) => <li key={r.id}>{r.label}</li>)}
             </ul>
           </Card>
-        </div>
-        <div className="span-6">
-          <Card title="Proposal files and sharing">
-            <ul className="settings-list">
-              <li><strong>File types:</strong> {config.proposalFiles.types.map((t) => `${t.label} (${t.extension})`).join(' · ')}</li>
-              <li><strong>Maximum size:</strong> {Math.round(config.proposalFiles.maxBytes / (1024 * 1024))} MB</li>
-              <li><strong>Shared via:</strong> {config.shareChannels.map((c) => c.label).join(' · ')}</li>
-              <li><strong>Time zone:</strong> {config.businessTimezone} · <strong>Currency:</strong> {config.currency}</li>
-            </ul>
-          </Card>
-        </div>
-        <div className="span-12">
-          <ListsEditor onMessage={toast.show} />
         </div>
       </div>
-      <OccasionsEditor />
+      )}
       {changing && (
         <RoutingForm item={changing} routing={current} onSave={routing.set} onReload={routing.reload}
           onClose={() => setChanging(null)}

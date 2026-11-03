@@ -148,7 +148,10 @@ def test_office_screen_privacy_and_its_account_opens_nothing_else(api, session):
     assert "price" not in text and "contact" not in text and "phone" not in text and "comment" not in text
     data = body.json()
     assert data["week"] and data["confirmations"] and "count" in data["preparing"]
-    assert set(data["month"]) == {"confirmed", "decided", "received"}
+    assert set(data["month"]) == {"confirmed", "lost", "decided", "received"}
+    assert {"id", "participants", "service", "initial"} <= set(data["week"][0]), "this week: what the office needs to know"
+    assert isinstance(data["upcoming"], int) and data["upcoming"] >= len(data["week"])
+    assert data["upcoming"] == len(data["week"]) + len(data["later"]), "this week plus the rest of the next 30 days"
     for path in ("/api/proposal-requests", "/api/events", "/api/analytics", "/api/notifications", "/api/facilitators"):
         assert api.get(path, headers=SCREEN).status_code == 403, path
     assert api.post("/api/proposal-requests", headers=SCREEN, json={}).status_code == 403

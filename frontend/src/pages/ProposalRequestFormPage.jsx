@@ -1,14 +1,15 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import PageLayout from '../components/layout/PageLayout.jsx'
 import Card from '../components/ui/Card.jsx'
 import EmptyState from '../components/ui/EmptyState.jsx'
 import Icon from '../components/ui/Icon.jsx'
+import RelTime from '../components/ui/RelTime.jsx'
 import SegmentedControl from '../components/ui/SegmentedControl.jsx'
 import StatusBadge from '../components/ui/StatusBadge.jsx'
 import { Person } from '../components/dashboard/cells.jsx'
 import ClientPicker from '../components/crm/ClientPicker.jsx'
-import { useConfig, useCurrentUser, useLists, useLookups, useOccasions, useProposalRequest, useRequestForm } from '../data/hooks.js'
+import { useConfig, useCurrentUser, useLastClientRequest, useLists, useLookups, useOccasions, useProposalRequest, useRequestForm } from '../data/hooks.js'
 import { visibleOptions } from '../domain/lists.js'
 import { API_MODE } from '../data/source.js'
 import { BRANDS, getBrand, serviceLabel } from '../domain/brands.js'
@@ -18,7 +19,10 @@ import { isActiveOpportunity, todayISO } from '../domain/metrics.js'
 import { resolveAssignedAM } from '../domain/routing.js'
 import { EVENT_DATE_PRECISION, EVENT_NAME_MAX, canEditDraft, findPossibleDuplicates, requestFields } from '../domain/workflow.js'
 import { formatCurrency } from '../lib/format.js'
-import { prefillFrom } from '../domain/radar.js'
+import { plusDays, prefillFrom } from '../domain/radar.js'
+import { occasionFor, suggestedDeadline, tagsFromBrief } from '../domain/smartDefaults.js'
+import { cairoTodayISO } from '../domain/events.js'
+import { formatShortDate } from '../lib/format.js'
 import { editDraftLink, proposalLink } from '../lib/links.js'
 
 const EMPTY = {
@@ -89,12 +93,16 @@ export default function ProposalRequestFormPage() {
   const { id: draftId } = useParams()
   const form = useRequestForm()
   const { data: draft, isLoading: draftLoading, reload: reloadDraft } = useProposalRequest(draftId)
+  // "Create request from previous" (radar): the previous request is read on its own, so it prefills in API mode too.
+  const { search } = useLocation()
+  const fromId = draftId ? null : new URLSearchParams(search).get('from')
+  const previous = useProposalRequest(fromId || undefined)
 
   // ---- access ----
   if (!form.access.allowed) {
     return <Blocked title="You can't create proposal requests">{form.access.reason}</Blocked>
   }
-  if ((draftId && draftLoading && !draft) || form.isLoading) {
+  if ((draftId && draftLoading && !draft) || form.isLoading || (fromId && previous.isLoading && !previous.data)) {
     return <PageLayout title={draftId ? `Edit draft ${draftId}` : 'New proposal'}><Card><p className="muted" role="status">Loading…</p></Card></PageLayout>
   }
   // API mode: the server says whether this viewer may edit the draft (canEditDraft); demo mode: the rules.
@@ -107,10 +115,13 @@ export default function ProposalRequestFormPage() {
       </Blocked>
     )
   }
-  return <RequestForm key={draftId ?? 'new'} draftId={draftId} draft={draft} form={form} reloadDraft={reloadDraft} />
+  return <RequestForm key={draftId ?? 'new'} draftId={draftId} draft={draft} form={form} reloadDraft={reloadDraft} previous={previous.data} />
 }
 
-function RequestForm({ draftId, draft, form, reloadDraft }) {
+/** Quick picks for the proposal deadline: from today (Cairo), never on or after the event day. */
+const DEADLINE_PICKS = [{ days: 2, label: 'In 2 days' }, { days: 3, label: 'In 3 days' }, { days: 7, label: 'In a week' }, { days: 14, label: 'In 2 weeks' }]
+
+function RequestForm({ draftId, draft, form, reloadDraft, previous = null }) {
   const { routing } = useConfig().data
   const navigate = useNavigate()
   const location = useLocation()
@@ -118,13 +129,28 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
   const { createClients } = useCurrentUser()
   const { clientsById } = useLookups()
   const briefTags = visibleOptions(useLists().data, 'briefTags')
-  const toggleTag = (code) => setValues((prev) => ({
-    ...prev, briefTags: prev.briefTags.includes(code) ? prev.briefTags.filter((c) => c !== code) : [...prev.briefTags, code],
-  }))
+  const toggleTag = (code) => {
+    setManual((m) => ({ ...m, briefTags: true }))
+    setValues((prev) => ({
+      ...prev, briefTags: prev.briefTags.includes(code) ? prev.briefTags.filter((c) => c !== code) : [...prev.briefTags, code],
+    }))
+  }
   const allClients = useMemo(() => Object.values(clientsById).filter((c) => !c.archivedAt), [clientsById])
   const isHead = viewer.activeRole === ROLE.COMMERCIAL_HEAD
 
-  const [values, setValues] = useState(() => (draft ? toFormValues(draft) : prefill(location.search, clients, opportunities, allRequests)))
+  const [values, setValues] = useState(() => (draft ? toFormValues(draft)
+    : prefill(location.search, clients, opportunities, previous ? [previous, ...allRequests] : allRequests)))
+  const [showEndDate, setShowEndDate] = useState(() => Boolean(draft?.eventEndDate))
+  // Fields the person set by hand: a smart default never overwrites them (a saved draft counts as set).
+  const [manual, setManual] = useState(() => (draft ? { requiredBy: true, occasionId: true, briefTags: true } : {}))
+  const markManual = (field) => setManual((m) => (m[field] ? m : { ...m, [field]: true }))
+  // An unsent new request is kept on this computer while typing; reopening the form offers it back.
+  const storeKey = `iee.newRequest.${viewer.userId}`
+  const prefilled = /[?&](client|opportunity|from)=/.test(location.search)
+  const [saved, setSaved] = useState(() => {
+    if (draft || prefilled) return null
+    try { return JSON.parse(window.localStorage.getItem(storeKey) ?? 'null') } catch { return null }
+  })
   const occasions = useOccasions().items
   const [errors, setErrors] = useState({})
   const [newClient, setNewClient] = useState(null) // "+ Add '<name>' as a new client": created with the request
@@ -142,17 +168,80 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
   const duplicates = findPossibleDuplicates(values, allRequests, draftId ?? null)
   const am = brand ? usersById[resolveAssignedAM(brand.id, routing)] : null // the live routing (Settings)
 
+  // Smart defaults: the client's last request fills brand and service (while the person has not chosen
+  // them), and offers its participants in one click. Everything stays editable.
+  const last = useLastClientRequest(client, draftId ?? null).data
+  const [autoFill, setAutoFill] = useState(null) // { clientId, requestId, brand, service }
+  useEffect(() => {
+    if (!last || last.clientId !== values.clientId) return
+    const untouched = !values.brand || (autoFill && values.brand === autoFill.brand && values.service === autoFill.service)
+    if (!untouched) return
+    setValues((prev) => ({ ...prev, brand: last.brand, service: last.service, opportunityId: prev.brand === last.brand ? prev.opportunityId : '' }))
+    setAutoFill({ clientId: last.clientId, requestId: last.id, brand: last.brand, service: last.service })
+    // Runs when the client (or what we know about its last request) changes, not on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [last?.id, values.clientId])
+  const filledFromLast = autoFill && autoFill.clientId === values.clientId && values.brand === autoFill.brand && values.service === autoFill.service
+  const lastParticipants = last && last.clientId === values.clientId ? (last.confirmedParticipants ?? last.participants ?? null) : null
+  const today = cairoTodayISO()
+  const eventStart = values.eventDatePrecision === 'day' ? values.eventDate
+    : values.eventDatePrecision === 'month' && values.eventDate ? `${values.eventDate}-01` : ''
+  const deadlinePicks = DEADLINE_PICKS.map((p) => ({ ...p, date: plusDays(today, p.days) }))
+    .filter((p) => !eventStart || p.date < eventStart)
+
   const set = (field) => (e) => {
     const value = e.target.value
+    if (['requiredBy', 'occasionId'].includes(field)) markManual(field)
     setValues((prev) => {
       const next = { ...prev, [field]: value }
       // Keep dependent choices consistent: service follows brand; opportunity follows client + brand.
       if (field === 'brand' && prev.brand !== value) { next.service = ''; next.opportunityId = '' }
       if (field === 'clientId' && prev.clientId !== value) next.opportunityId = ''
       if (field === 'eventDatePrecision' && prev.eventDatePrecision !== value) { next.eventDate = ''; next.eventEndDate = '' }
+      // The event date suggests the proposal deadline (a week out, before the event) and the occasion
+      // (from Settings → Occasions), until the person sets either by hand.
+      if (field === 'eventDate' || field === 'eventDatePrecision') {
+        const start = next.eventDatePrecision === 'day' ? next.eventDate
+          : next.eventDatePrecision === 'month' && next.eventDate ? `${next.eventDate}-01` : ''
+        if (!manual.requiredBy) next.requiredBy = suggestedDeadline(start, today)
+        if (!manual.occasionId && next.eventDatePrecision === 'day') {
+          const found = occasionFor(next.eventDate, occasions)
+          next.occasionId = found ? String(found.id) : ''
+        }
+      }
       return next
     })
-    setErrors((prev) => ({ ...prev, [field]: undefined }))
+    setErrors((prev) => ({ ...prev, [field]: undefined, ...(field === 'eventDate' ? { requiredBy: undefined } : {}) }))
+  }
+  // Tags named in the brief are ticked when the brief is left (until the person ticks tags themselves).
+  const tagsFromText = () => {
+    if (manual.briefTags) return
+    const found = tagsFromBrief(values.requirementsSummary, briefTags)
+    if (found.length) setValues((prev) => ({ ...prev, briefTags: [...new Set([...prev.briefTags, ...found])] }))
+  }
+  // "Use last brief": the client's previous brief, requirements and tags, to edit rather than retype.
+  const lastBrief = last && last.clientId === values.clientId && last.requirementsSummary ? last : null
+  const useLastBrief = () => setValues((prev) => ({
+    ...prev,
+    requirementsSummary: lastBrief.requirementsSummary ?? prev.requirementsSummary,
+    specificRequirements: prev.specificRequirements || lastBrief.specificRequirements || '',
+    briefTags: prev.briefTags.length ? prev.briefTags : [...(lastBrief.briefTags ?? [])],
+  }))
+
+  // Keep the unsent new request on this computer while typing (never for a saved draft).
+  useEffect(() => {
+    if (draftId || saved) return undefined
+    const t = setTimeout(() => {
+      try {
+        const empty = !values.clientId && !newClient && !values.requirementsSummary && !values.eventDate
+        if (empty) window.localStorage.removeItem(storeKey)
+        else window.localStorage.setItem(storeKey, JSON.stringify({ values, newClient, at: new Date().toISOString() }))
+      } catch { /* not kept */ }
+    }, 600)
+    return () => clearTimeout(t)
+  }, [values, newClient, draftId, saved, storeKey])
+  const forgetSaved = () => {
+    try { window.localStorage.removeItem(storeKey) } catch { /* nothing kept */ }
   }
 
   async function run(submit) {
@@ -174,6 +263,7 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
       return
     }
     // Saved (demo store updated, or the server answered 2xx) before we get here.
+    forgetSaved()
     const flash = [result.message, ...(result.warnings ?? []).map((w) => w.message)].join(' ')
     if (submit) navigate(proposalLink(result.request.id), { state: { flash } })
     else navigate(editDraftLink(result.request.id), { replace: true, state: { flash } })
@@ -209,6 +299,20 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
           <span>{flash}</span>
         </div>
       )}
+      {saved && (
+        <div className="details-banner restore-banner" role="status">
+          <span>You started a request <RelTime value={saved.at} /> and did not send it.</span>
+          <span className="restore-banner__buttons">
+            <button type="button" className="btn btn--sm btn--primary" onClick={() => {
+              setValues({ ...EMPTY, ...saved.values })
+              setNewClient(saved.newClient ?? null)
+              if (saved.values?.eventEndDate) setShowEndDate(true)
+              setSaved(null)
+            }}>Continue it</button>
+            <button type="button" className="btn btn--sm" onClick={() => { forgetSaved(); setSaved(null) }}>Start fresh</button>
+          </span>
+        </div>
+      )}
 
       <form className="request-form" onSubmit={(e) => { e.preventDefault(); run(true) }} noValidate>
         <div className="dash-grid detail-grid request-form__grid">
@@ -216,7 +320,9 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
             <Card title="Client & service">
               <div className="form-grid">
                 <Field id="f-clientId" label="Client" required error={errors.clientId}
-                  hint={isHead ? 'Type to search all clients.' : 'Type to search the clients you own.'}>
+                  hint={ownerUser
+                    ? `BD owner: ${ownerUser.name} (the client's relationship owner)${viewer.userId !== ownerUser.id ? '. You are creating this on their behalf.' : '.'}`
+                    : isHead ? 'Type to search all clients.' : 'Type to search the clients you own.'}>
                   <ClientPicker
                     id="f-clientId"
                     clients={clients}
@@ -231,35 +337,12 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
                     brandName={brand?.name}
                     errors={errors}
                     describedBy={fieldProps('clientId')['aria-describedby']}
+                    selfId={viewer.userId}
                   />
                 </Field>
 
-                <Field id="f-eventName" label="Event name (optional)" error={errors.eventName}
-                  hint="Shown next to the client in lists.">
-                  <input type="text" maxLength={EVENT_NAME_MAX} placeholder="e.g. Summer team day" {...fieldProps('eventName')}
-                    value={values.eventName} onChange={set('eventName')} />
-                </Field>
-                {occasions.length > 0 && (
-                  <Field id="f-occasion" label="Occasion (optional)" error={errors.occasionId} hint="Ramadan, Easter, Summer…: helps us call back next time.">
-                    <select {...fieldProps('occasionId')} value={values.occasionId} onChange={set('occasionId')}>
-                      <option value="">None</option>
-                      {occasions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                    </select>
-                  </Field>
-                )}
-
-                <div className="form-field">
-                  <span className="form-field__label">BD owner</span>
-                  <div className="readonly-value">
-                    {ownerUser ? <Person user={ownerUser} suffix="Client relationship owner" /> : <span className="muted">Set by the client</span>}
-                  </div>
-                  <span className="form-field__hint">
-                    Always the client's relationship owner; not editable here.
-                    {ownerUser && viewer.userId !== ownerUser.id && ` You are creating this on behalf of ${ownerUser.name}.`}
-                  </span>
-                </div>
-
-                <Field id="f-brand" label="Brand" required error={errors.brand}>
+                <Field id="f-brand" label="Brand" required error={errors.brand}
+                  hint={filledFromLast ? `As in ${client?.name ?? 'this client'}'s last request (${autoFill.requestId}). Change it if needed.` : null}>
                   <SegmentedControl
                     label="Brand"
                     options={BRANDS.map((b) => ({ value: b.id, label: b.name }))}
@@ -276,8 +359,9 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
                   </select>
                 </Field>
 
+                {(openOpps.length > 0 || values.opportunityId) && (
                 <Field id="f-opportunityId" label="Linked opportunity (optional)" error={errors.opportunityId}
-                  hint={client && brand ? `Open ${brand.name} opportunities for ${client.name}.` : 'Choose a client and brand to see opportunities.'}>
+                  hint={`Open ${brand?.name ?? ''} opportunities for ${client?.name ?? 'this client'}.`}>
                   <select {...fieldProps('opportunityId')} value={values.opportunityId} onChange={set('opportunityId')}
                     disabled={!client || !brand}>
                     <option value="">None</option>
@@ -288,6 +372,7 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
                     ))}
                   </select>
                 </Field>
+                )}
               </div>
             </Card>
 
@@ -311,23 +396,58 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
                   )}
                 </Field>
 
-                {values.eventDatePrecision === 'day' && (
+                {values.eventDatePrecision === 'day' && (showEndDate || values.eventEndDate || errors.eventEndDate) ? (
                   <Field id="f-eventEndDate" label="End date (optional)" error={errors.eventEndDate}
                     hint="Only for events over more than one day.">
                     <input type="date" min={values.eventDate || todayISO()} {...fieldProps('eventEndDate')}
                       value={values.eventEndDate} onChange={set('eventEndDate')} />
                   </Field>
-                )}
+                ) : values.eventDatePrecision === 'day' ? (
+                  <div className="form-field form-field--aside">
+                    <button type="button" className="link-btn" onClick={() => setShowEndDate(true)}>+ Several days? Add an end date</button>
+                  </div>
+                ) : <div className="form-field form-field--aside" />}
 
                 <Field id="f-requiredBy" label="Proposal deadline" error={errors.requiredBy}
-                  hint="When the AM must send the proposal to BD. Today or later, and before the event.">
+                  hint={!manual.requiredBy && values.requiredBy
+                    ? 'Set to a week from today (before the event); change it if needed.'
+                    : 'When the AM must send the proposal to BD. Today or later, and before the event.'}>
                   <input type="date" min={todayISO()} {...fieldProps('requiredBy')} value={values.requiredBy} onChange={set('requiredBy')} />
+                  {deadlinePicks.length > 0 && (
+                    <span className="quick-picks" role="group" aria-label="Quick deadline">
+                      {deadlinePicks.map((p) => (
+                        <button key={p.days} type="button" className={`quick-pick${values.requiredBy === p.date ? ' is-on' : ''}`}
+                          title={formatShortDate(p.date)} onClick={() => set('requiredBy')({ target: { value: p.date } })}>{p.label}</button>
+                      ))}
+                    </span>
+                  )}
                 </Field>
 
                 <Field id="f-participants" label="Expected participants" error={errors.participants} hint="Whole number.">
                   <input type="number" inputMode="numeric" min="1" step="1" {...fieldProps('participants')}
                     value={values.participants} onChange={set('participants')} />
+                  {lastParticipants > 0 && String(lastParticipants) !== String(values.participants) && (
+                    <span className="quick-picks">
+                      <button type="button" className="quick-pick" onClick={() => set('participants')({ target: { value: String(lastParticipants) } })}>
+                        Same as last time: {lastParticipants}
+                      </button>
+                    </span>
+                  )}
                 </Field>
+
+                <Field id="f-eventName" label="Event name (optional)" error={errors.eventName}
+                  hint="Shown next to the client in lists.">
+                  <input type="text" maxLength={EVENT_NAME_MAX} placeholder="e.g. Summer team day" {...fieldProps('eventName')}
+                    value={values.eventName} onChange={set('eventName')} />
+                </Field>
+                {occasions.length > 0 && (
+                  <Field id="f-occasion" label="Occasion (optional)" error={errors.occasionId} hint={!manual.occasionId && values.occasionId ? 'From the event date; change it if needed.' : 'Ramadan, Easter, Summer…: helps us call back next time.'}>
+                    <select {...fieldProps('occasionId')} value={values.occasionId} onChange={set('occasionId')}>
+                      <option value="">None</option>
+                      {occasions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                    </select>
+                  </Field>
+                )}
               </div>
             </Card>
 
@@ -336,7 +456,15 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
                 <Field id="f-requirementsSummary" label="Event brief" error={errors.requirementsSummary}
                   hint="What the client wants: format, audience, location, duration.">
                   <textarea rows={4} {...fieldProps('requirementsSummary')} value={values.requirementsSummary}
-                    onChange={set('requirementsSummary')} />
+                    onChange={set('requirementsSummary')} onBlur={tagsFromText}
+                    placeholder="Format, audience, location, duration…" />
+                  {lastBrief && !values.requirementsSummary && (
+                    <span className="quick-picks">
+                      <button type="button" className="quick-pick" onClick={useLastBrief} title={lastBrief.requirementsSummary}>
+                        Use the brief from {lastBrief.id}
+                      </button>
+                    </span>
+                  )}
                 </Field>
                 <fieldset className="form-field reason-picker">
                   <legend className="form-field__label">Quick tags (optional)</legend>
@@ -359,20 +487,7 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
             </Card>
           </div>
 
-          <div className="span-4 detail-col">
-            <Card title="Routing">
-              {brand && am ? (
-                <div className="routing">
-                  <p className="routing__line">
-                    This request will go to <strong>{am.name}</strong> ({brand.name}).
-                  </p>
-                  <Person user={am} suffix={`Account Manager — ${brand.name}`} />
-                  <span className="form-field__hint">Set automatically by brand; not editable.</span>
-                </div>
-              ) : (
-                <p className="muted">Choose a brand to see which Account Manager will prepare the proposal.</p>
-              )}
-            </Card>
+          <div className="span-4 detail-col request-form__aside">
 
             {duplicates.length > 0 && (
               <div className="notice" role="note">
@@ -391,12 +506,20 @@ function RequestForm({ draftId, draft, form, reloadDraft }) {
               </div>
             )}
 
-            <Card title="Save or submit">
+            <Card title={draftId ? 'Save or submit' : 'Send to the Account Manager'}>
               <div className="form-stack">
+                <div className="routing">
+                  {brand && am ? (
+                    <>
+                      <span className="form-field__hint">Prepared by (set by the brand's routing)</span>
+                      <Person user={am} suffix={`Account Manager — ${brand.name}`} />
+                    </>
+                  ) : (
+                    <p className="muted">Choose a brand to see which Account Manager will prepare the proposal.</p>
+                  )}
+                </div>
                 <p className="form-field__hint">
-                  <strong>Save draft</strong> keeps it private to you; nothing is sent. Needs client, brand and service.
-                  <br />
-                  <strong>Submit request</strong> sends it to the Account Manager. Needs every field except the optional ones.
+                  <strong>Submit</strong> sends it now. <strong>Save draft</strong> keeps it private to you (it needs only client, brand and service).
                 </p>
                 {error && (
                   <div className="form-error" role="alert">

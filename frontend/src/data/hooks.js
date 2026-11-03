@@ -2,9 +2,7 @@
  * THE data hooks every screen imports. They are the demo-store versions (src/demo/hooks.js)
  * or the API versions (src/api/hooks.js), chosen once by VITE_DATA_SOURCE (src/data/source.js).
  * Both return the same shapes, so screens don't know where their data comes from.
- *
- * Dashboards are the exception in Phase 4A: they keep reading demo figures from
- * src/demo/hooks.js (useProposalRequests, useTasks, ...) and take only the identity from here.
+ * (Tasks are the one exception: sample data from the demo seed; see useSampleTasks below.)
  */
 import * as demo from '../demo/hooks.js'
 import * as server from '../api/hooks.js'
@@ -29,6 +27,7 @@ export const useConfig = impl.useConfig
 export const useCreateClient = impl.useCreateClient
 export const useClientActions = impl.useClientActions
 export const useClientHistory = impl.useClientHistory
+export const useLastClientRequest = impl.useLastClientRequest
 export const useCreateOpportunity = impl.useCreateOpportunity
 export const useOpportunityActions = impl.useOpportunityActions
 export const useTeam = impl.useTeam
@@ -55,14 +54,16 @@ export const useDataFixes = impl.useDataFixes
 /**
  * Tasks are not in the backend yet, so they are SAMPLE data from the demo seed (labelled "sample
  * data" wherever they appear). In API mode their client references are mapped to the server's ids
- * (demo c-08 -> CL-0008; users and opportunities share ids). On the REAL database there are none:
- * sample tasks would otherwise sit next to real clients.
+ * (demo c-08 -> CL-0008; users and opportunities share ids). Anywhere but the demo database there are
+ * none: sample tasks would otherwise sit next to real clients.
  */
 export function useSampleTasks() {
   const res = demo.useTasks()
   const { dataKind } = impl.useCurrentUser()
   if (!API_MODE) return res
-  if (dataKind === 'real') return { ...res, data: [] }
+  // Only the demo database may show them: the real data, the test copy and the presentation copy are
+  // all real clients, where sample tasks would look like real work.
+  if (dataKind !== 'demo') return { ...res, data: [] }
   const toServerId = (id) => id?.replace(/^c-(\d+)$/, (_, n) => `CL-${n.padStart(4, '0')}`) ?? null
   return { ...res, data: res.data.map((t) => ({ ...t, related: { ...t.related, clientId: toServerId(t.related.clientId) } })) }
 }

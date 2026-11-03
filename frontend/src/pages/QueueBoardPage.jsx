@@ -13,6 +13,7 @@ import { ROLE } from '../domain/roles.js'
 import { waitingLabel } from '../domain/waiting.js'
 import { formatShortDate } from '../lib/format.js'
 import { proposalLink } from '../lib/links.js'
+import { isDeadlinePending } from '../domain/metrics.js'
 import { brandEdge } from '../components/ui/BrandTag.jsx'
 import { SkeletonList } from '../components/ui/Skeleton.jsx'
 import { usePeekLink } from '../lib/peek.js'
@@ -21,7 +22,7 @@ const SUBTITLE = 'Every proposal assigned to you, by stage.'
 const daysText = (n) => (n === null ? '—' : n === 0 ? 'today' : n === 1 ? '1 day' : `${n} days`)
 
 /**
- * My queue — board (Account Managers only): every open proposal assigned to me, by where it is in
+ * My queue (Account Managers only): every open proposal assigned to me, by where it is in
  * production: New · Preparing · Waiting · Ready for BD · With client. Clicking a card opens the
  * request; stages change only through actions. "Due by date" groups the same proposals by deadline.
  */
@@ -29,7 +30,7 @@ export default function QueueBoardPage() {
   const { user, activeRole } = useCurrentUser()
   if (activeRole !== ROLE.ACCOUNT_MANAGER) {
     return (
-      <PageLayout title="My queue — board" subtitle={SUBTITLE}>
+      <PageLayout title="My queue" subtitle={SUBTITLE}>
         <Card><EmptyState icon="clipboard" title="For Account Managers">
           {user.roles.includes(ROLE.ACCOUNT_MANAGER) ? 'Switch to Account Manager to see your board.' : 'This board shows the proposals assigned to an Account Manager.'}
         </EmptyState></Card>
@@ -46,7 +47,7 @@ function Board() {
   const [params, setParams] = useSearchParams()
   const peekLink = usePeekLink()
   const today = cairoTodayISO()
-  if (!data && !error) return <PageLayout title="My queue — board" subtitle={SUBTITLE}><SkeletonList /></PageLayout>
+  if (!data && !error) return <PageLayout title="My queue" subtitle={SUBTITLE}><SkeletonList /></PageLayout>
   if (!data) return <DashboardLoading subtitle={SUBTITLE} error={error} />
 
   const view = params.get('view') === 'due' ? 'due' : 'board'
@@ -61,7 +62,7 @@ function Board() {
   const sum = deadlineSummary(mine, today)
 
   return (
-    <PageLayout title="My queue — board" subtitle={SUBTITLE}
+    <PageLayout title="My queue" subtitle={SUBTITLE}
       actions={<SegmentedControl label="Show as" value={view} onChange={setView}
         options={[{ value: 'board', label: 'Board' }, { value: 'due', label: 'Due by date' }]} />}>
       <p className="queue-summary" role="status">
@@ -82,17 +83,20 @@ function Board() {
                           {r.newForYou && <span className="new-dot" aria-label="New for you" />}
                           {clientsById[r.clientId]?.name ?? r.clientName ?? '—'}
                         </span>
-                        <span className="queue-card__event">{r.eventName ?? '—'}</span>
-                        <span className={`queue-card__deadline${tone ? ` queue-card__deadline--${tone}` : ''}`}>
-                          Due {r.requiredBy ? formatShortDate(r.requiredBy) : '—'}
-                        </span>
+                        {r.eventName && <span className="queue-card__event">{r.eventName}</span>}
+                        {/* The deadline matters only while the AM still owes the proposal. */}
+                        {isDeadlinePending(r) && (
+                          <span className={`queue-card__deadline${tone ? ` queue-card__deadline--${tone}` : ''}`}>
+                            {r.requiredBy ? `Due ${formatShortDate(r.requiredBy)}` : 'No deadline'}
+                          </span>
+                        )}
                         <span className="muted">{daysText(days)} in {c.label}</span>
                         {waiting && <span className="waiting-tag waiting-tag--team">On {waitingLabel(waiting, usersById)}</span>}
                       </Link>
                     </li>
                   )
                 })}
-                {c.cards.length === 0 && <li className="muted queue-column__empty">—</li>}
+                {c.cards.length === 0 && <li className="muted queue-column__empty">Nothing here</li>}
               </ul>
             </section>
           ))}

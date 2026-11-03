@@ -1,8 +1,9 @@
 /**
  * The morning summary at the top of My Work: one or two plain sentences built from the data (no AI).
  * At most 3 facts, in this priority, for the person's role:
- *   new items · overdue · due today · to-dos due today · longest waiting item on me · questions waiting for
- *   my answer · events this week (Operations, HR) · stuck for 3+ days (Noha, Executives)
+ *   new items · requests waiting on me (Marketing, Operations, HR) · overdue · due today · to-dos due today ·
+ *   events short of facilitators (HR) · events with no facilitator count (Operations) · longest waiting item on me ·
+ *   questions waiting for my answer · events this week (Operations, HR) · stuck for 3+ days (Noha, Executives)
  * Each fact links to its list. Nothing to report: "You're all caught up."
  */
 
@@ -31,9 +32,16 @@ export function morningFacts(counts, role) {
   const stuckRole = [ROLE.COMMERCIAL_HEAD, ROLE.EXECUTIVE].includes(role)
   const all = [
     counts.newItems > 0 && { key: 'new', text: plural(counts.newItems, 'new item', 'new items'), to: '/#new' },
+    counts.waitingOnMe > 0 && { key: 'waiting', text: plural(counts.waitingOnMe, 'request waits', 'requests wait') + ' on you', to: '/#waiting-on-you' },
     counts.overdue > 0 && { key: 'overdue', text: `${counts.overdue} overdue`, to: '/proposals?deadline=overdue' },
     counts.dueToday > 0 && { key: 'today', text: `${counts.dueToday} due today`, to: '/#your-turn' },
     counts.todosDueToday > 0 && { key: 'todos', text: plural(counts.todosDueToday, 'to-do', 'to-dos') + ' due today', to: '/#todos' },
+    role === ROLE.HR && counts.missingStaff > 0 && {
+      key: 'staff', text: plural(counts.missingStaff, 'event is', 'events are') + ' short of facilitators', to: '/staffing',
+    },
+    role === ROLE.OPERATIONS && counts.needsCount > 0 && {
+      key: 'count', text: plural(counts.needsCount, 'event needs', 'events need') + ' a facilitator count', to: '/#facilitator-count',
+    },
     counts.longestWait && counts.longestWait.days >= 1 && {
       key: 'longest', text: `${counts.longestWait.name} has been waiting ${plural(counts.longestWait.days, 'day', 'days')}`,
       to: counts.longestWait.to,

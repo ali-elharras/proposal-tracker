@@ -2,9 +2,12 @@
  * "Due by date": open requests grouped by their proposal deadline, overdue first.
  *   Overdue · Today · Tomorrow · each later day this week ("Thu 29 Oct") · Next week · Later · No deadline
  * Imported rows flagged "Needs review" have no deadline that counts, so they are left out.
+ * Once the AM has handed the proposal over (Ready for BD, With client, Postponed), its deadline no longer
+ * applies: those requests sit in "Proposal handed over", never in "Overdue".
  */
 
 import { getStatus, PROPOSAL_STATUS as PS } from './status.js'
+import { isDeadlinePending } from './metrics.js'
 
 const DAY = 86400000
 const utc = (iso) => new Date(`${iso}T00:00:00Z`)
@@ -28,6 +31,7 @@ export function dueGroups(requests, today) {
     groups.set(key, g)
   }
   for (const r of requests.filter(isOpenWithDeadline)) {
+    if (!isDeadlinePending(r)) { add('handed-over', 'Proposal handed over', 5000, r); continue }
     if (!r.requiredBy) { add('none', 'No deadline', 9999, r); continue }
     const d = daysBetween(today, r.requiredBy)
     if (d < 0) add('overdue', 'Overdue', -1, r, true)
@@ -51,18 +55,19 @@ export function dueGroups(requests, today) {
 /** "12 proposals · 2 overdue · 4 due this week" (this week: today to Saturday). */
 export function deadlineSummary(requests, today) {
   const open = requests.filter(isOpenWithDeadline)
+  const pending = open.filter(isDeadlinePending) // only deadlines the AM still has to meet count
   const toSaturday = 6 - utc(today).getUTCDay()
   const days = (r) => (r.requiredBy ? daysBetween(today, r.requiredBy) : null)
   return {
     total: open.length,
-    overdue: open.filter((r) => days(r) !== null && days(r) < 0).length,
-    dueThisWeek: open.filter((r) => days(r) !== null && days(r) >= 0 && days(r) <= toSaturday).length,
+    overdue: pending.filter((r) => days(r) !== null && days(r) < 0).length,
+    dueThisWeek: pending.filter((r) => days(r) !== null && days(r) >= 0 && days(r) <= toSaturday).length,
   }
 }
 
 /** Deadline tone for a card: 'overdue' (red), 'soon' (within 3 days, amber), or null. */
 export function deadlineTone(r, today) {
-  if (!r.requiredBy || !isOpenWithDeadline(r)) return null
+  if (!r.requiredBy || !isOpenWithDeadline(r) || !isDeadlinePending(r)) return null
   const d = daysBetween(today, r.requiredBy)
   return d < 0 ? 'overdue' : d <= 3 ? 'soon' : null
 }

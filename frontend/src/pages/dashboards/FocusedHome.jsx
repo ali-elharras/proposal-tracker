@@ -1,10 +1,8 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import PageLayout from '../../components/layout/PageLayout.jsx'
-import Badge from '../../components/ui/Badge.jsx'
 import Card from '../../components/ui/Card.jsx'
 import DataTable from '../../components/ui/DataTable.jsx'
-import EmptyState from '../../components/ui/EmptyState.jsx'
 import Icon from '../../components/ui/Icon.jsx'
 import KpiCard from '../../components/dashboard/KpiCard.jsx'
 import { ClientEvent, DueDate } from '../../components/dashboard/cells.jsx'
@@ -21,15 +19,17 @@ import { isDeadlineUpcoming, isRequestOverdue } from '../../domain/metrics.js'
 import { ROLE } from '../../domain/roles.js'
 import { PERIODS, PERIOD_IDS, funnel, funnelChange, results } from '../../domain/scorecard.js'
 import CountUp from '../../components/ui/CountUp.jsx'
+import SegmentedControl from '../../components/ui/SegmentedControl.jsx'
 import { PROPOSAL_STATUS as PS, getStage, getStatus, stageOf, subLabelFor } from '../../domain/status.js'
 import { followUpDue } from '../../domain/tracker.js'
 import { effectiveWaiting, getTeam, viewerPill, waitingDays } from '../../domain/waiting.js'
 import { rowMarkers } from '../../domain/conversation.js'
 import StatusPill, { RowMarkers } from '../../components/ui/StatusPill.jsx'
-import { formatShortDate } from '../../lib/format.js'
+import { formatEventDate, formatShortDate } from '../../lib/format.js'
 import { proposalLink, proposalsLink } from '../../lib/links.js'
 
 const NEEDS_ATTENTION_MAX = 5
+const PERIOD_SHORT = { month: 'Month', quarter: 'Quarter', year: 'Year', all: 'All time' }
 const isOpen = (r) => r.status !== PS.DRAFT && !getStatus('proposal', r.status).closed
 const daysText = (n) => (n === null ? '—' : n === 0 ? 'today' : n === 1 ? '1 day' : `${n} days`)
 
@@ -46,43 +46,66 @@ function usePeriod() {
   return [period, setPeriod]
 }
 
-/** Received → Prepared → Sent → Won · Lost · Postponed | In progress, with the period selector. */
-export function FunnelStrip({ requests, period, onPeriod, today, scopeLabel }) {
+/**
+ * The pipeline for a period: Received → Prepared → Sent → Confirmed as bars sized against Received (with the
+ * share that got that far), then the outcomes (Lost · Postponed · In progress) and the events. The period
+ * (This month · quarter · year · All time) is one click; the change against the previous period sits under each number.
+ */
+export function FunnelStrip({ requests, period, onPeriod, today, scopeLabel, showPeriod = true }) {
   const f = funnel(requests, period, today)
   const ev = eventCounts(requests, today) // shown separately: never mixed into Done
   // "↑ 3 vs last month": the same days of the previous period; hidden when there is nothing to compare.
   const change = funnelChange(requests, period, today)
-  const step = (label, value, tone, key, upIsGood = true) => (
-    <span className={`funnel__step${tone ? ` funnel__step--${tone}` : ''}`}>
-      <span className="funnel__value tabular"><CountUp value={value} id={`funnel:${scopeLabel}:${label}`} /></span>
-      <span className="funnel__label">{label}</span>
-      {change && key && <Change n={change[key]} label={change.label} upIsGood={upIsGood} />}
-    </span>
-  )
+  const base = Math.max(f.received, 1)
+  const pct = (n) => (f.received ? `${Math.round((n / f.received) * 100)}%` : '—')
+  const stages = [
+    { key: 'received', label: 'Received', value: f.received },
+    { key: 'prepared', label: 'Prepared', value: f.prepared },
+    { key: 'sent', label: 'Sent', value: f.sent },
+    { key: 'won', label: 'Confirmed', value: f.won, tone: 'won' },
+  ]
+  const outcomes = [
+    { key: 'lost', label: 'Lost', value: f.lost, upIsGood: false, tone: 'lost' },
+    { key: 'postponed', label: 'Postponed', value: f.postponed, upIsGood: false },
+    { key: null, label: 'In progress', value: f.inProgress },
+  ]
+  const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? ''
   return (
-    <section className="funnel" aria-label={`Funnel: ${scopeLabel}`}>
-      <div className="funnel__steps">
-        {step('Received', f.received, null, 'received')}
-        <Icon name="arrowRight" size={14} className="funnel__arrow" />
-        {step('Prepared', f.prepared, null, 'prepared')}
-        <Icon name="arrowRight" size={14} className="funnel__arrow" />
-        {step('Sent', f.sent, null, 'sent')}
-        <Icon name="arrowRight" size={14} className="funnel__arrow" />
-        {step('Confirmed', f.won, 'won', 'won')}
-        {step('Lost', f.lost, null, 'lost', false)}
-        {step('Postponed', f.postponed, null, 'postponed', false)}
-        <span className="funnel__divider" aria-hidden="true" />
-        {step('In progress', f.inProgress)}
+    <section className="funnel funnel--v2" aria-label={`Funnel: ${scopeLabel}`}>
+      <header className="funnel__head">
+        <div>
+          <h2 className="funnel__title">Pipeline</h2>
+          <p className="funnel__sub">{scopeLabel} · {periodLabel.toLowerCase()}</p>
+        </div>
+        {showPeriod && <SegmentedControl label="Period" value={period} onChange={onPeriod}
+          options={PERIODS.map((p) => ({ value: p.id, label: PERIOD_SHORT[p.id] ?? p.label }))} />}
+      </header>
+      <ol className="funnel__bars">
+        {stages.map((st, i) => (
+          <li key={st.key} className={`funnel__bar-row${st.tone ? ` funnel__bar-row--${st.tone}` : ''}`}>
+            <span className="funnel__label">{st.label}</span>
+            <span className="funnel__track" aria-hidden="true">
+              <span className="funnel__fill" style={{ inlineSize: `${Math.max((st.value / base) * 100, st.value ? 2 : 0)}%` }} />
+            </span>
+            <span className="funnel__value tabular"><CountUp value={st.value} id={`funnel:${scopeLabel}:${st.label}`} /></span>
+            <span className="funnel__pct tabular">{i === 0 ? '' : pct(st.value)}</span>
+            <span className="funnel__delta">{change && <Change n={change[st.key]} label={change.label} upIsGood />}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="funnel__outcomes">
+        {outcomes.map((o) => (
+          <span key={o.label} className={`funnel__outcome${o.tone ? ` funnel__outcome--${o.tone}` : ''}`}>
+            <span className="funnel__outcome-value tabular"><CountUp value={o.value} id={`funnel:${scopeLabel}:${o.label}`} /></span>
+            <span className="funnel__outcome-label">{o.label}</span>
+            {change && o.key && <Change n={change[o.key]} label={change.label} upIsGood={o.upIsGood} />}
+          </span>
+        ))}
       </div>
       <p className="funnel__events">
-        Events: {ev.upcoming} confirmed upcoming · {ev.initial} initially confirmed · {ev.done} done · {ev.cancelled} cancelled after confirmation
+        <Icon name="calendar" size={14} /> Events: <strong>{ev.upcoming}</strong> confirmed upcoming · <strong>{ev.initial}</strong> initially confirmed
+        · <strong>{ev.done}</strong> done · <strong>{ev.cancelled}</strong> cancelled after confirmation
       </p>
-      <label className="funnel__period">
-        <span className="sr-only">Period</span>
-        <select value={period} onChange={(e) => onPeriod(e.target.value)}>
-          {PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-        </select>
-      </label>
     </section>
   )
 }
@@ -162,17 +185,14 @@ export function NeedsAttention({ requests, today, defaultChip = 'me' }) {
           {
             key: 'blocking', header: "What's blocking it",
             render: (r) => (
-              <span>
-                {blocking(r, lists)}
-                {isRequestOverdue(r, today) && <> <Badge tone="danger" icon="alert">Overdue</Badge></>}
-              </span>
+              <span>{blocking(r, lists)}</span>
             ),
           },
           { key: 'who', header: 'Who acts next', nowrap: true, render: (r) => <StatusPill pill={viewerPill(r, viewer, usersById, today)} request={r} /> },
           {
             key: 'wait', header: 'Waiting', nowrap: true,
             render: (r) => (
-              <span className="stack">
+              <span className="wait-cell">
                 <span className="tabular">{daysText(waitingDays(effectiveWaiting(r), now))}</span>
                 <RemindButton request={r} compact />
               </span>
@@ -231,8 +251,6 @@ export function BdHome({ subtitle }) {
   const mineLink = (extra) => proposalsLink({ bdOwner: user.id, ...extra })
   return (
     <PageLayout title="Dashboard" subtitle={subtitle}>
-      <FunnelStrip requests={mine} period={period} onPeriod={setPeriod} today={today} scopeLabel="your requests" />
-      <RadarCount />
       <NeedsAttention requests={mine} today={today} />
       <Cards items={[
         { label: 'Ready to send', icon: 'document', value: open.filter((r) => r.status === PS.READY_FOR_BD).length,
@@ -242,6 +260,8 @@ export function BdHome({ subtitle }) {
         { label: 'Postponed follow-ups due', icon: 'calendar', value: open.filter((r) => followUpDue(r)).length,
           note: 'Follow-up date reached', to: mineLink({ status: PS.POSTPONED }) },
       ]} />
+      <FunnelStrip requests={mine} period={period} onPeriod={setPeriod} today={today} scopeLabel="Your requests" />
+      <RadarCount />
     </PageLayout>
   )
 }
@@ -258,8 +278,6 @@ export function AmHome({ subtitle }) {
   const mineLink = (extra) => proposalsLink({ assignedAM: user.id, ...extra })
   return (
     <PageLayout title="Dashboard" subtitle={subtitle}>
-      <FunnelStrip requests={mine} period={period} onPeriod={setPeriod} today={today} scopeLabel="requests assigned to you" />
-      <NeedsAttention requests={mine} today={today} />
       <Cards items={[
         { label: 'New in my queue', icon: 'document', value: open.filter((r) => r.status === PS.SUBMITTED).length,
           note: 'Submitted, not started', to: mineLink({ status: PS.SUBMITTED }) },
@@ -268,6 +286,8 @@ export function AmHome({ subtitle }) {
         { label: 'Overdue', icon: 'alert', value: overdue.length, tone: overdue.length ? 'danger' : 'default',
           note: 'Past the proposal deadline', to: mineLink({ deadline: 'overdue' }) },
       ]} />
+      <NeedsAttention requests={mine} today={today} />
+      <FunnelStrip requests={mine} period={period} onPeriod={setPeriod} today={today} scopeLabel="Requests assigned to you" />
       <ShortList title="Due this week" rows={dueThisWeek} empty="Nothing due in the next 7 days."
         render={(r) => `due ${formatShortDate(r.requiredBy)}`}
         viewAll={dueThisWeek.length > 5 ? <Link to={mineLink({ deadline: 'upcoming' })}>View all ({dueThisWeek.length})</Link> : null} />
@@ -286,22 +306,31 @@ export function HeadHome({ subtitle }) {
   const lastFive = [...last.won, ...last.lost].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 5)
   return (
     <PageLayout title="Dashboard" subtitle={subtitle}>
-      <FunnelStrip requests={all} period={period} onPeriod={setPeriod} today={today} scopeLabel="the company" />
-      <NeedsAttention requests={all} today={today} defaultChip="all" />
-      <RadarCount />
       <Cards items={[
         { label: 'Waiting on BD', icon: 'users', value: waitingOn('bd'), note: 'Open requests BD must move', to: proposalsLink({ waiting: 'bd' }) },
         { label: 'Waiting on AM', icon: 'clipboard', value: waitingOn('am'), note: 'Open requests an AM must move', to: proposalsLink({ waiting: 'am' }) },
         { label: 'Overdue', icon: 'alert', value: overdue, tone: overdue ? 'danger' : 'default', note: 'Past the proposal deadline',
           to: proposalsLink({ deadline: 'overdue' }) },
       ]} />
+      <NeedsAttention requests={all} today={today} defaultChip="all" />
+      <FunnelStrip requests={all} period={period} onPeriod={setPeriod} today={today} scopeLabel="The company" />
+      <RadarCount />
       <ShortList title="Last 5 results" rows={lastFive.map((x) => ({ ...x.request, resultAt: x.at }))} empty="No results yet."
-        render={(r) => `${r.status === PS.ACCEPTED ? 'Confirmed' : 'Lost'} · ${formatShortDate(r.resultAt)}`} />
+        render={(r) => (
+          <>
+            <StatusPill pill={r.status === PS.ACCEPTED ? { kind: 'won', label: 'Confirmed' } : { kind: 'lost', label: 'Lost' }} request={r} />
+            {' '}{formatShortDate(r.resultAt)}
+          </>
+        )} />
     </PageLayout>
   )
 }
 
-/** Marketing / Operations: "Waiting on you (N)", each with a one-click "Done — back to …". */
+/**
+ * Marketing, Operations and HR: what waits on them first ("Done — back to …" in one click), then their
+ * staffing work (HR: events short of facilitators and ratings to give; Operations: events with no facilitator
+ * count yet), then the next two weeks of events, then their own to-dos.
+ */
 export function WaitingOnYouHome({ subtitle }) {
   const { activeRole } = useCurrentUser()
   const { items, isLoading, error, done } = useWaitingOnMe()
@@ -316,58 +345,87 @@ export function WaitingOnYouHome({ subtitle }) {
   const team = activeRole === ROLE.MARKETING ? 'Marketing' : activeRole === ROLE.OPERATIONS ? 'Operations' : null
   const toRate = useToRate()
   const events = useEvents().data
+  const staffing = useStaffing({ skip: ![ROLE.HR, ROLE.OPERATIONS].includes(activeRole) }).data // staffing is theirs only
   const newCount = useNewCount()
   const week = events ? operationsSections(events.items ?? [], [], {}, events.today ?? cairoTodayISO()).week.length : 0
   const isHR = activeRole === ROLE.HR
+  const isOps = activeRole === ROLE.OPERATIONS
   const todos = useTodos()
+  const staffItems = staffing?.items ?? []
+  const short = staffItems.filter((e) => (e.facilitatorsNeeded ?? 0) > (e.assignedCount ?? 0))
+  const noCount = staffItems.filter((e) => e.facilitatorsNeeded === null || e.facilitatorsNeeded === undefined)
   return (
     <PageLayout title="My Work" subtitle={subtitle}>
-      <MorningSummary counts={{ newItems: newCount, eventsThisWeek: week, todosDueToday: todosDueToday(todos.items, cairoTodayISO()) }} />
-      <MyTodos />
+      <MorningSummary counts={{
+        newItems: newCount, eventsThisWeek: week, todosDueToday: todosDueToday(todos.items, cairoTodayISO()),
+        waitingOnMe: isHR ? 0 : items.length, missingStaff: short.length, needsCount: noCount.length,
+      }} />
+      {!isHR && (
+        <Card id="waiting-on-you" title={`Waiting on you (${items.length})`} subtitle={team ? `Requests that need ${team} or you by name` : null}>
+          {error && <p className="form-error" role="alert">{error.message}</p>}
+          {message && <p className="muted" role="status">{message}</p>}
+          {!isLoading && items.length === 0 ? (
+            <p className="empty-inline"><Icon name="checkmark" size={16} strokeWidth={2.25} /> Nothing is waiting on you. When someone needs you on a request, it shows here.</p>
+          ) : (
+            <ul className="short-list short-list--actions">
+              {items.map((it) => (
+                <li key={it.id}>
+                  <span className="stack">
+                    {it.canOpen
+                      ? <Link to={proposalLink(it.id)}><ClientEvent name={it.clientName} eventName={it.eventName} /></Link>
+                      : <strong className="short-list__title"><ClientEvent name={it.clientName} eventName={it.eventName} /></strong>}
+                    <span className="muted">
+                      {it.reasonLabel}{it.expectedBy ? ` · expected ${formatShortDate(it.expectedBy)}` : ''}
+                      {it.note ? ` · “${it.note}”` : ''} · {it.id}
+                    </span>
+                  </span>
+                  <button type="button" className="btn btn--sm btn--primary" disabled={busy === it.id} aria-busy={busy === it.id}
+                    onClick={() => finish(it)}>
+                    <Icon name="checkmark" size={14} strokeWidth={2.25} /> Done — back to {it.backTo}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+      {isHR && <StaffingAttention short={short} />}
+      {isOps && noCount.length > 0 && <FacilitatorCount events={noCount} />}
       {toRate.length > 0 && (
         <Card title={`Rate facilitators (${toRate.length})`} subtitle="Done events: stars, attended yes / no, and feedback (you can change it for 7 days)">
           <ul className="short-list">
             {toRate.map((e) => (
               <li key={e.id}>
                 <Link to={`/events/${encodeURIComponent(e.id)}#staffing`}><ClientEvent name={e.clientName} eventName={e.eventName} /></Link>
-                <span className="muted">{e.eventDate ? formatShortDate(e.eventDate) : '—'} · {e.missing} to rate</span>
+                <span className="muted">{e.eventDate ? formatEventDate(e.eventDate, e.eventEndDate, e.eventDatePrecision) : '—'} · {e.missing} to rate</span>
               </li>
             ))}
           </ul>
         </Card>
       )}
-      {isHR && <StaffingAttention />}
-      {!isHR && (
-      <Card title={`Waiting on you (${items.length})`} subtitle={team ? `Requests that need ${team} or you by name` : null}>
-        {error && <p className="form-error" role="alert">{error.message}</p>}
-        {message && <p className="muted" role="status">{message}</p>}
-        {!isLoading && items.length === 0 ? (
-          <EmptyState icon="check" title="Nothing is waiting on you">When someone needs you on a request, it shows here.</EmptyState>
-        ) : (
-          <ul className="short-list short-list--actions">
-            {items.map((it) => (
-              <li key={it.id}>
-                <span className="stack">
-                  {it.canOpen
-                    ? <Link to={proposalLink(it.id)}><ClientEvent name={it.clientName} eventName={it.eventName} /></Link>
-                    : <ClientEvent name={it.clientName} eventName={it.eventName} />}
-                  <span className="muted">
-                    {it.id} · {it.reasonLabel}{it.expectedBy ? ` · expected ${formatShortDate(it.expectedBy)}` : ''}
-                    {it.note ? ` · ${it.note}` : ''}
-                  </span>
-                </span>
-                <button type="button" className="btn btn--sm" disabled={busy === it.id} aria-busy={busy === it.id}
-                  onClick={() => finish(it)}>
-                  Done — back to {it.backTo}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-      )}
       <UpcomingEvents />
+      <MyTodos />
     </PageLayout>
+  )
+}
+
+/** Operations: coming events with no facilitator count yet (HR staffs them from that number). */
+function FacilitatorCount({ events }) {
+  return (
+    <Card id="facilitator-count" title={`Set facilitators needed (${events.length})`}
+      subtitle="HR staffs each event from this number; the ratio's suggestion is on the event">
+      <ul className="short-list short-list--actions">
+        {events.slice(0, 6).map((e) => (
+          <li key={e.id}>
+            <span className="stack">
+              <Link to={`/events/${encodeURIComponent(e.id)}#staffing`}><ClientEvent name={e.clientName} eventName={e.eventName} /></Link>
+              <span className="muted">{e.eventDate ? formatEventDate(e.eventDate, e.eventEndDate, e.eventDatePrecision) : 'Date not set'}{e.participants ? ` · ${e.participants} people` : ''}</span>
+            </span>
+            <Link to={`/events/${encodeURIComponent(e.id)}#staffing`} className="btn btn--sm">Set the number</Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
   )
 }
 
@@ -397,18 +455,23 @@ function UpcomingEvents() {
   )
 }
 
-/** HR: events in the next 4 weeks still missing facilitators (the Staffing page has everything). */
-function StaffingAttention() {
-  const { data } = useStaffing()
-  const short = (data?.items ?? []).filter((e) => (e.facilitatorsNeeded ?? 0) > (e.assignedCount ?? 0))
+/** HR: coming events still short of facilitators (the Staffing page has everything). */
+function StaffingAttention({ short }) {
   return (
-    <Card title={`Missing facilitators (${short.length})`} actions={<Link to="/staffing">Staffing</Link>}>
-      {short.length === 0 ? <p className="muted">Every event with a number needed is staffed.</p> : (
-        <ul className="short-list">
-          {short.slice(0, 5).map((e) => (
+    <Card title={`Short of facilitators (${short.length})`} actions={<Link to="/staffing">Staffing</Link>}>
+      {short.length === 0 ? (
+        <p className="empty-inline"><Icon name="checkmark" size={16} strokeWidth={2.25} /> Every event with a number needed is staffed.</p>
+      ) : (
+        <ul className="short-list short-list--actions">
+          {short.slice(0, 6).map((e) => (
             <li key={e.id}>
-              <Link to={`/events/${encodeURIComponent(e.id)}#staffing`}><ClientEvent name={e.clientName} eventName={e.eventName} /></Link>
-              <span className="text-danger">{e.facilitatorsNeeded - e.assignedCount} missing</span>
+              <span className="stack">
+                <Link to={`/events/${encodeURIComponent(e.id)}#staffing`}><ClientEvent name={e.clientName} eventName={e.eventName} /></Link>
+                <span className="muted">{e.eventDate ? formatEventDate(e.eventDate, e.eventEndDate, e.eventDatePrecision) : 'Date not set'} · {e.assignedCount} of {e.facilitatorsNeeded} assigned</span>
+              </span>
+              <Link to={`/events/${encodeURIComponent(e.id)}#staffing`} className="btn btn--sm btn--primary">
+                Assign {e.facilitatorsNeeded - e.assignedCount}
+              </Link>
             </li>
           ))}
         </ul>

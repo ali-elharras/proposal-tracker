@@ -4,7 +4,7 @@ import ConfirmDialog from '../ui/ConfirmDialog.jsx'
 import { Field, FormAlert, PanelButtons, successText, usePanelForm } from './formParts.jsx'
 import { useOpportunityActions } from '../../data/hooks.js'
 import { stageLabel, validateStageMove } from '../../domain/crm.js'
-import { LOST_REASONS, LOST_REASON_OTHER, OPPORTUNITY_STAGE } from '../../domain/status.js'
+import { LOST_REASONS, LOST_REASONS_FOR_FORMS, LOST_REASON_OTHER, OPPORTUNITY_STAGE } from '../../domain/status.js'
 
 const FORM_ID = 'stage-form'
 const LOST = OPPORTUNITY_STAGE.LOST
@@ -69,7 +69,7 @@ export default function StageForm({ opportunity, targets, lost = false, onClose,
           <Field id="sf-reason" label="Why was it lost?" required error={errors.lostReason ?? (lost ? errors.stage : null)}>
             <select {...fieldProps('sf-reason', 'lostReason')} value={values.lostReason} onChange={set('lostReason')}>
               <option value="">Choose…</option>
-              {LOST_REASONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+              {LOST_REASONS_FOR_FORMS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
           </Field>
         )}

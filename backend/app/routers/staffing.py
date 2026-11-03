@@ -1,7 +1,7 @@
 """
 HR staffing: facilitators for confirmed events (domain/staffing.py has the rules; all checked here).
 
-  GET   /api/staffing                          events to staff (HR, Commercial Head, Operations): needed · assigned · missing
+  GET   /api/staffing                          events to staff (HR, Operations): needed · assigned · missing
   GET   /api/staffing/dashboard                HR numbers
   POST  /api/staffing/ratios/{brand}/{service}  one facilitator per N participants (empty: removed)
   PATCH /api/events/{id}/facilitators-needed   Operations, the assigned AM or Noha (HR is told)
@@ -106,8 +106,8 @@ class RatioIn(_In):
 @router.post("/staffing/ratios/{brand}/{service}")
 def set_ratio(brand: str, service: str, body: RatioIn, actor: Actor = Depends(get_current_actor),
               now: datetime = Depends(get_now), db: Session = Depends(get_db)):
-    """Settings → Staffing ratios (HR and the Commercial Head): one facilitator per N participants."""
-    _require(rules.can_manage_facilitators(actor), "Staffing ratios are set by HR or the Commercial Head.")
+    """Staffing ratios (HR and Operations): one facilitator per N participants."""
+    _require(rules.can_manage_facilitators(actor), "Staffing ratios are set by HR or Operations.")
     if service not in SERVICES.get(brand, {}):
         raise not_found("No such brand and service.")
     begin_write(db)
@@ -296,7 +296,7 @@ def _create_facilitator(db: Session, actor: Actor, body: FacilitatorIn, now: dat
 @router.post("/facilitators", status_code=201)
 def create_facilitator(body: FacilitatorIn, actor: Actor = Depends(get_current_actor), now: datetime = Depends(get_now),
                        db: Session = Depends(get_db)):
-    _require(rules.can_manage_facilitators(actor), "HR or the Commercial Head add facilitators.")
+    _require(rules.can_manage_facilitators(actor), "HR or Operations add facilitators.")
     begin_write(db)
     f = _create_facilitator(db, actor, body, now)
     db.commit()
@@ -349,8 +349,8 @@ def get_facilitator(facilitator_id: int, actor: Actor = Depends(get_current_acto
 @router.patch("/facilitators/{facilitator_id}")
 def update_facilitator(facilitator_id: int, body: FacilitatorIn, actor: Actor = Depends(get_current_actor),
                        now: datetime = Depends(get_now), db: Session = Depends(get_db)):
-    """Edit details, or mark active / inactive (HR, Noha)."""
-    _require(rules.can_manage_facilitators(actor), "HR or the Commercial Head edit facilitators.")
+    """Edit details, or mark active / inactive (HR, Operations)."""
+    _require(rules.can_manage_facilitators(actor), "HR or Operations edit facilitators.")
     begin_write(db)
     f = db.get(Facilitator, facilitator_id)
     if f is None:
@@ -370,7 +370,7 @@ class NoteIn(_In):
 @router.post("/facilitators/{facilitator_id}/notes", status_code=201)
 def add_note(facilitator_id: int, body: NoteIn, actor: Actor = Depends(get_current_actor), now: datetime = Depends(get_now),
              db: Session = Depends(get_db)):
-    _require(rules.can_manage_facilitators(actor), "HR or the Commercial Head add notes.")
+    _require(rules.can_manage_facilitators(actor), "HR or Operations add notes.")
     begin_write(db)
     if db.get(Facilitator, facilitator_id) is None:
         raise not_found("No such facilitator.")
@@ -413,9 +413,9 @@ def _same_day(db: Session, row: ProposalRequest, facilitator_id: int) -> list[st
 @router.post("/events/{event_id}/facilitators", status_code=201)
 def assign(event_id: str, body: AssignIn, actor: Actor = Depends(get_current_actor), now: datetime = Depends(get_now),
            db: Session = Depends(get_db)):
-    """Assign a facilitator (HR, Noha); typing a new name creates them and assigns them in one step.
+    """Assign a facilitator (HR, Operations); typing a new name creates them and assigns them in one step.
     A same-day booking elsewhere is a warning, never a block."""
-    _require(rules.can_manage_facilitators(actor), "HR or the Commercial Head assign facilitators.")
+    _require(rules.can_manage_facilitators(actor), "HR or Operations assign facilitators.")
     begin_write(db)
     row = _event_for_staffing(db, actor, event_id)
     if body.new_facilitator is not None:
@@ -441,7 +441,7 @@ def assign(event_id: str, body: AssignIn, actor: Actor = Depends(get_current_act
 @router.post("/events/{event_id}/facilitators/{facilitator_id}/remove")
 def unassign(event_id: str, facilitator_id: int, actor: Actor = Depends(get_current_actor), now: datetime = Depends(get_now),
              db: Session = Depends(get_db)):
-    _require(rules.can_manage_facilitators(actor), "HR or the Commercial Head assign facilitators.")
+    _require(rules.can_manage_facilitators(actor), "HR or Operations assign facilitators.")
     begin_write(db)
     row = _event_for_staffing(db, actor, event_id)
     a = db.scalars(select(FacilitatorAssignment).where(FacilitatorAssignment.request_id == row.id,
@@ -455,7 +455,7 @@ def unassign(event_id: str, facilitator_id: int, actor: Actor = Depends(get_curr
 
 
 def staffing_detail(db: Session, row: ProposalRequest, actor: Actor, today: str) -> dict:
-    """The staffing part of an event page (HR, Operations, Noha; ratings only for those who see them)."""
+    """The staffing part of an event page (HR, Operations; ratings only for those who see them)."""
     if not _sees_staffing(actor):
         return {}
     assigned = _assigned(db, [row.id]).get(row.id, [])

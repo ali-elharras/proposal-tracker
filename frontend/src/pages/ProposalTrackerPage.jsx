@@ -9,6 +9,7 @@ import ScopeChip from '../components/ui/ScopeChip.jsx'
 import StatusBadge from '../components/ui/StatusBadge.jsx'
 import Badge from '../components/ui/Badge.jsx'
 import SegmentedControl from '../components/ui/SegmentedControl.jsx'
+import { FilterBar, FilterMenu, FilterToggle, SearchBox } from '../components/ui/Filters.jsx'
 import DueByDate from '../components/proposal/DueByDate.jsx'
 import { PastRecordPanel, usePastRecordAllowed } from '../components/proposal/DataFixes.jsx'
 import BrandTag from '../components/ui/BrandTag.jsx'
@@ -20,12 +21,14 @@ import { API_MODE } from '../data/source.js'
 import { findNavItem, labelFor } from '../navigation.js'
 import { BRANDS, getBrand } from '../domain/brands.js'
 import { ROLE } from '../domain/roles.js'
-import { PROPOSAL_STATUS as PS, getStage, stageList, statusList } from '../domain/status.js'
+import { isClientOwnerKind } from '../domain/access.js'
+import { stageList, statusList } from '../domain/status.js'
 import {
   DEADLINE_STATE_LABELS, EMPTY_FILTERS, GROUP, PROPOSAL_TABS, PROPOSAL_TAB_IDS, SORT_OPTIONS, activeFilterCount, groupByStage,
   parseTrackerParams, proposalBucket, scopesFor, trackerParams,
 } from '../domain/tracker.js'
 import useTab from '../lib/useTab.js'
+import useRememberedFilters from '../lib/useRememberedFilters.js'
 import { WAITING_CHIPS, effectiveWaiting, groupByWaiting, viewerPill, waitingDays, waitingLabel } from '../domain/waiting.js'
 import { rowMarkers } from '../domain/conversation.js'
 import { todayISO } from '../domain/metrics.js'
@@ -89,6 +92,8 @@ function RequestCard({ row, usersById }) {
 }
 
 /** Proposal Tracker: every request this viewer may see, with scope, tabs, search and filters kept in the URL. */
+const SKIP_KEYS = ['page', 'peek', 'past'] // never remembered: the page number and one-off panels
+
 export default function ProposalTrackerPage() {
   const [params, setParams] = useSearchParams()
   const { user, activeRole, createRequests } = useCurrentUser()
@@ -103,9 +108,9 @@ export default function ProposalTrackerPage() {
   // Noha, Doaa and Tony track "where is each proposal right now?": grouped by stage by default,
   // or by who it's waiting on (by=waiting); by=none lists it plainly.
   const tracking = [ROLE.COMMERCIAL_HEAD, ROLE.EXECUTIVE].includes(activeRole)
-  const canGroupByWaiting = tracking
   const byWaiting = tracking && params.get('by') === 'waiting'
   const byStage = tracking && !byWaiting && params.get('by') !== 'none'
+  useRememberedFilters(`iee.filters.proposals.${user.id}:${activeRole}`, SKIP_KEYS)
   const [bucket, setBucket] = useTab(PROPOSAL_TAB_IDS, 'open')
   const dueView = params.get('view') === 'due' // "Due by date": open requests grouped by deadline
   const setView = (v) => {
@@ -136,10 +141,8 @@ export default function ProposalTrackerPage() {
   const scopes = scopesFor(activeRole, user) // an AM gets the other brand only with "See all brands"
   const currentScope = scopes.find((s) => s.id === state.scope)
   const filterCount = activeFilterCount(parsed.filters)
-  // Search, Stage and Brand are always visible; everything else sits behind More filters.
-  const moreCount = [state.filters.status.length > 0, state.filters.assignedAM, state.filters.bdOwner, state.filters.deadline,
-    state.sort !== SORT_OPTIONS[0].id, state.group === GROUP.STAGE].filter(Boolean).length
-  const [showMore, setShowMore] = useState(false)
+  // Brand matters only when more than one brand is in view (an AM without "See all brands" sees one).
+  const showBrand = !(activeRole === ROLE.ACCOUNT_MANAGER && scopes.length < 2)
 
   const update = (patch) => {
     const next = { ...state, ...patch, filters: { ...state.filters, ...(patch.filters ?? {}) } }
@@ -147,37 +150,16 @@ export default function ProposalTrackerPage() {
     for (const keep of ['tab', 'by']) if (params.get(keep)) out.set(keep, params.get(keep)) // the tab and grouping stay
     setParams(out, { replace: true })
   }
-  const setFilter = (key) => (e) => update({ filters: { [key]: e.target.value } })
   const clearFilters = () => update({ filters: { ...EMPTY_FILTERS, hideEvents: true }, tab: 'all' })
 
   const ams = users.filter((u) => u.roles.includes(ROLE.ACCOUNT_MANAGER))
-  const bds = users.filter((u) => u.roles.includes(ROLE.BUSINESS_DEVELOPMENT))
+  const bds = users.filter(isClientOwnerKind) // BD role or "Brings in clients"
   const statuses = statusList('proposal')
 
-  // Chips for every active filter (covers values set by dashboard links that have no single dropdown, e.g. several statuses).
-  const chips = [
-    state.filters.q && { key: 'q', label: `Search: "${state.filters.q}"`, clear: { q: '' } },
-    state.filters.brand && { key: 'brand', label: `Brand: ${getBrand(state.filters.brand)?.name}`, clear: { brand: '' } },
-    state.filters.stage.length > 0 && {
-      key: 'stage',
-      label: `Stage: ${state.filters.stage.map((id) => getStage(id).label).join(', ')}`,
-      clear: { stage: [] },
-    },
-    state.filters.status.length > 0 && {
-      key: 'status',
-      label: `Detailed status: ${state.filters.status.map((s) => statuses.find((x) => x.id === s)?.label).join(', ')}`,
-      clear: { status: [] },
-    },
-    state.filters.assignedAM && { key: 'am', label: `AM: ${usersById[state.filters.assignedAM]?.name}`, clear: { assignedAM: '' } },
-    state.filters.bdOwner && { key: 'bd', label: `BD owner: ${usersById[state.filters.bdOwner]?.name}`, clear: { bdOwner: '' } },
-    state.filters.deadline && { key: 'deadline', label: `Deadline: ${DEADLINE_STATE_LABELS[state.filters.deadline]}`, clear: { deadline: '' } },
-    state.filters.waitingOn && { key: 'waiting', label: WAITING_LABELS[state.filters.waitingOn], clear: { waitingOn: '' } },
-    state.filters.open && { key: 'open', label: 'Open requests only', clear: { open: false } },
-    state.filters.needsReview && { key: 'review', label: 'Imported, needs review', clear: { needsReview: false } },
-  ].filter(Boolean)
-  const setByWaiting = (on) => {
+  const setGrouping = (v) => {
     const next = new URLSearchParams(params)
-    if (on) next.set('by', 'waiting')
+    if (v === 'waiting') next.set('by', 'waiting')
+    else if (v === 'none') next.set('by', 'none')
     else next.delete('by')
     next.delete('page')
     setParams(next, { replace: true })
@@ -195,8 +177,19 @@ export default function ProposalTrackerPage() {
         </span>
       ),
     },
-    { key: 'stage', header: 'Stage', nowrap: true, render: (row) => <StatusPill pill={viewerPill(row.request, viewer, usersById, todayISO())} request={row.request} /> },
-    { key: 'waiting', header: 'Waiting on · days', render: (row) => <WaitingBar request={row.request} small /> },
+    {
+      // One column: who it is waiting on and since when; Overdue / Your turn / results shown as a pill above it.
+      key: 'status', header: 'Status · waiting on',
+      render: (row) => {
+        const pill = viewerPill(row.request, viewer, usersById, todayISO())
+        return (
+          <span className="stack stack--gap">
+            {pill.kind !== 'waiting' && <StatusPill pill={pill} request={row.request} />}
+            <WaitingBar request={row.request} small />
+          </span>
+        )
+      },
+    },
     { key: 'deadline', header: 'Deadline', nowrap: true, render: (row) => <DueDate date={row.request.requiredBy} active={row.deadlineActive} /> },
     {
       key: 'people', header: 'BD owner · AM', nowrap: true,
@@ -289,131 +282,53 @@ export default function ProposalTrackerPage() {
       )}
 
       <Card flush>
-        <div className="tracker-filters">
-          <label className="form-field tracker-filters__search">
-            <span className="form-field__label">Search</span>
-            <input type="search" placeholder="Request ID or client name" value={state.filters.q} onChange={setFilter('q')} />
-          </label>
-          <label className="form-field">
-            <span className="form-field__label">Brand</span>
-            <select value={state.filters.brand} onChange={setFilter('brand')}>
-              <option value="">All brands</option>
-              {BRANDS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </label>
-          <label className="form-field">
-            <span className="form-field__label">Stage</span>
-            <select
-              value={state.filters.stage.length === 1 ? state.filters.stage[0] : state.filters.stage.length ? '__many' : ''}
-              onChange={(e) => update({ filters: { stage: e.target.value && e.target.value !== '__many' ? [e.target.value] : [] } })}
-            >
-              <option value="">Any stage</option>
-              {state.filters.stage.length > 1 && <option value="__many">{state.filters.stage.length} stages (from link)</option>}
-              {stageList().map((st) => <option key={st.id} value={st.id}>{st.label}</option>)}
-            </select>
-          </label>
-          <div className="tracker-filters__more">
-            <button type="button" className="btn" aria-expanded={showMore} aria-controls="tracker-more-filters"
-              onClick={() => setShowMore((v) => !v)}>
-              <Icon name="sliders" size={16} /> {showMore ? 'Fewer filters' : 'More filters'}
-              {moreCount > 0 && <span className="tracker-tab__count tabular">{moreCount}</span>}
-            </button>
-          </div>
-        </div>
-
-        {showMore && (
-        <div className="tracker-filters tracker-filters--more" id="tracker-more-filters">
-          <label className="form-field">
-            <span className="form-field__label">Detailed status</span>
-            <select
-              value={state.filters.status.length === 1 ? state.filters.status[0] : state.filters.status.length ? '__many' : ''}
-              onChange={(e) => update({ filters: { status: e.target.value && e.target.value !== '__many' ? [e.target.value] : [] } })}
-            >
-              <option value="">Any status</option>
-              {state.filters.status.length > 1 && <option value="__many">{state.filters.status.length} statuses (from link)</option>}
-              {statuses.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
-          </label>
-          <label className="form-field">
-            <span className="form-field__label">Assigned AM</span>
-            <select value={state.filters.assignedAM} onChange={setFilter('assignedAM')}>
-              <option value="">Any AM</option>
-              {ams.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </label>
-          <label className="form-field">
-            <span className="form-field__label">BD owner</span>
-            <select value={state.filters.bdOwner} onChange={setFilter('bdOwner')}>
-              <option value="">Any BD owner</option>
-              {bds.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </label>
-          <label className="form-field">
-            <span className="form-field__label">Deadline</span>
-            <select value={state.filters.deadline} onChange={setFilter('deadline')}>
-              <option value="">Any deadline</option>
-              {Object.entries(DEADLINE_STATE_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
-          </label>
-          <label className="form-field">
-            <span className="form-field__label">Sort by</span>
-            <select value={state.sort} onChange={(e) => update({ sort: e.target.value })}>
-              {SORT_OPTIONS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
-          </label>
-          <label className="form-check tracker-filters__group">
-            <input
-              type="checkbox"
-              checked={state.group === GROUP.STAGE}
-              onChange={(e) => update({ group: e.target.checked ? GROUP.STAGE : GROUP.NONE })}
-            />
-            <span>Group by stage</span>
-          </label>
-        </div>
-        )}
-
-        <div className="waiting-chips" role="group" aria-label="Waiting on">
-          <span className="form-field__label">Waiting on</span>
-          <button type="button" aria-pressed={state.filters.status.length === 1 && state.filters.status[0] === PS.POSTPONED}
-            className={`chip-toggle${state.filters.status.length === 1 && state.filters.status[0] === PS.POSTPONED ? ' is-on' : ''}`}
-            onClick={() => update({ filters: { status: state.filters.status[0] === PS.POSTPONED ? [] : [PS.POSTPONED] } })}>
-            Postponed
-          </button>
-          {WAITING_CHIPS.map((c) => (
-            <button key={c.id} type="button" aria-pressed={state.filters.waiting === c.id}
-              className={`chip-toggle${state.filters.waiting === c.id ? ' is-on' : ''}`}
-              onClick={() => update({ filters: { waiting: state.filters.waiting === c.id ? '' : c.id } })}>
-              {c.label}
-            </button>
-          ))}
-          {canGroupByWaiting && (
-            <label className="form-check waiting-chips__group">
-              <input type="checkbox" checked={byWaiting} onChange={(e) => setByWaiting(e.target.checked)} />
-              <span>Group by who it's waiting on</span>
-            </label>
+        <FilterBar
+          active={filterCount}
+          onClear={clearFilters}
+          count={isLoading && !result ? 'Loading…' : `${total} ${total === 1 ? 'request' : 'requests'}`}
+          end={(
+            <>
+              {tracking ? (
+                <FilterMenu label="Group" clearable={false} icon="sliders"
+                  value={byWaiting ? 'waiting' : byStage ? 'stage' : 'none'}
+                  onChange={(v) => setGrouping(v)}
+                  options={[{ value: 'stage', label: 'By stage' }, { value: 'waiting', label: "By who it's waiting on" }, { value: 'none', label: 'No grouping' }]} />
+              ) : (
+                <FilterToggle label="Group by stage" icon="sliders" on={state.group === GROUP.STAGE}
+                  onChange={(on) => update({ group: on ? GROUP.STAGE : GROUP.NONE })} />
+              )}
+              <FilterMenu label="Sort" clearable={false} icon="arrowDown" value={state.sort}
+                onChange={(v) => update({ sort: v || SORT_OPTIONS[0].id })}
+                options={SORT_OPTIONS.map((o) => ({ value: o.id, label: o.label }))} />
+            </>
           )}
-        </div>
-
-        {chips.length > 0 && (
-          <div className="tracker-chips">
-            {chips.map((c) => (
-              <button key={c.key} type="button" className="filter-chip" onClick={() => update({ filters: c.clear })}
-                aria-label={`Remove filter ${c.label}`}>
-                {c.label} <Icon name="x" size={12} strokeWidth={2.25} />
-              </button>
-            ))}
-            <button type="button" className="link-btn" onClick={clearFilters}>
-              Clear all filters ({filterCount})
-            </button>
-          </div>
-        )}
+        >
+          <SearchBox value={state.filters.q} onChange={(v) => update({ filters: { q: v } })} placeholder="Client, event or request ID" />
+          <FilterMenu label="Waiting on" value={state.filters.waiting} anyLabel="Anyone"
+            onChange={(v) => update({ filters: { waiting: v } })}
+            options={WAITING_CHIPS.map((c) => ({ value: c.id, label: c.id === 'me' ? 'Me' : c.label }))} />
+          {showBrand && (
+            <FilterMenu label="Brand" value={state.filters.brand} anyLabel="Both brands"
+              onChange={(v) => update({ filters: { brand: v } })} options={BRANDS.map((b) => ({ value: b.id, label: b.name }))} />
+          )}
+          <FilterMenu label="Stage" multiple value={state.filters.stage}
+            onChange={(v) => update({ filters: { stage: v } })} options={stageList().map((st) => ({ value: st.id, label: st.label }))} />
+          <FilterMenu label="Deadline" value={state.filters.deadline} anyLabel="Any deadline"
+            onChange={(v) => update({ filters: { deadline: v } })}
+            options={Object.entries(DEADLINE_STATE_LABELS).map(([id, label]) => ({ value: id, label }))} />
+          {activeRole !== ROLE.ACCOUNT_MANAGER && (
+            <FilterMenu label="AM" value={state.filters.assignedAM} anyLabel="Any Account Manager"
+              onChange={(v) => update({ filters: { assignedAM: v } })} options={ams.map((u) => ({ value: u.id, label: u.name }))} />
+          )}
+          {!(activeRole === ROLE.BUSINESS_DEVELOPMENT && state.scope === 'mine') && (
+            <FilterMenu label="BD owner" value={state.filters.bdOwner} anyLabel="Any BD owner"
+              onChange={(v) => update({ filters: { bdOwner: v } })} options={bds.map((u) => ({ value: u.id, label: u.name }))} />
+          )}
+          <FilterMenu label="Status" multiple value={state.filters.status}
+            onChange={(v) => update({ filters: { status: v } })} options={statuses.map((x) => ({ value: x.id, label: x.label }))} />
+        </FilterBar>
 
         {error && <p className="form-error" role="alert">{error.message}</p>}
-        <div className="tracker-count" role="status" aria-busy={isLoading}>
-          {isLoading && !result ? 'Loading…' : <>{total} {total === 1 ? 'request' : 'requests'}</>}
-          {filterCount > 0 && ` matching ${filterCount} ${filterCount === 1 ? 'filter' : 'filters'}`}
-          {` · ${PROPOSAL_TABS.find((t) => t.id === bucket).label}`}
-        </div>
 
         {rows.length === 0 ? (
           isLoading ? <SkeletonList /> : scopeSize === 0 ? (
@@ -473,9 +388,9 @@ export default function ProposalTrackerPage() {
         <nav className="tracker-pager" aria-label="Pages">
           <button type="button" className="btn btn--sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}>Previous</button>
           <span className="muted">
-            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
           </span>
-          <button type="button" className="btn btn--sm" disabled={page * PAGE_SIZE >= total} onClick={() => goToPage(page + 1)}>Next</button>
+          <button type="button" className="btn btn--sm" disabled={page * pageSize >= total} onClick={() => goToPage(page + 1)}>Next</button>
         </nav>
       )}
       {waitingFor && (

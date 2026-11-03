@@ -21,17 +21,17 @@ export const NAV_SECTIONS = [
     label: null,
     items: [
       {
-        key: 'home', path: '/', label: 'My Work', icon: 'check', page: 'home', countsNew: true,
+        key: 'home', group: 'work', path: '/', label: 'My Work', icon: 'inbox', page: 'home', countsNew: true,
         describe: ({ role }) =>
           [ROLE.MARKETING, ROLE.OPERATIONS, ROLE.HR].includes(role) ? 'What is new and what needs you.'
           : 'What is new, what is your turn, and what you are waiting for.',
       },
       {
-        key: 'queue', path: '/queue', label: 'My queue', icon: 'clipboard', page: 'queue',
+        key: 'queue', group: 'work', path: '/queue', label: 'My queue', icon: 'clipboard', page: 'queue',
         describe: () => 'Every proposal assigned to you, by stage.',
       },
       {
-        key: 'proposals', path: '/proposals', label: 'Proposals', icon: 'document', page: 'proposals',
+        key: 'proposals', group: 'work', path: '/proposals', label: 'Proposals', icon: 'document', page: 'proposals',
         describe: ({ role, brandName }) =>
           role === EX ? 'Where each proposal is right now (to read).'
           : role === CH ? 'Every proposal across both brands, until the client confirms.'
@@ -39,19 +39,19 @@ export const NAV_SECTIONS = [
           : 'Your proposals and where each one stands, until the client confirms.',
       },
       {
-        key: 'events', path: '/events', label: 'Events', icon: 'calendar', page: 'events',
+        key: 'events', group: 'work', path: '/events', label: 'Events', icon: 'calendar', page: 'events',
         describe: ({ role }) =>
           role === ROLE.HR ? 'Initially confirmed, confirmed and done events.'
           : 'After the client agrees: initially confirmed, confirmed, done, postponed or cancelled.',
       },
       {
-        key: 'clients', path: '/clients', label: 'Clients', icon: 'building', page: 'clients',
+        key: 'clients', group: 'work', path: '/clients', label: 'Clients', icon: 'building', page: 'clients',
         describe: ({ role }) =>
           role === BD ? 'Schools, companies and agencies, including the ones you own.'
           : 'Schools, companies and agencies for both brands.',
       },
       {
-        key: 'dashboard', path: '/dashboard', label: 'Dashboard', icon: 'dashboard', page: 'dashboard',
+        key: 'dashboard', group: 'insights', path: '/dashboard', label: 'Dashboard', icon: 'dashboard', page: 'dashboard',
         describe: ({ role, brandName }) =>
           role === EX ? 'The company at a glance: value, pipeline, events and what is stuck.'
           : role === CH ? 'Proposals, deadlines and events across both brands, at a glance.'
@@ -59,24 +59,24 @@ export const NAV_SECTIONS = [
           : 'Your requests at a glance, and your numbers.',
       },
       {
-        key: 'analytics', path: '/analytics', label: 'Analytics', icon: 'chart', page: 'analytics',
+        key: 'analytics', group: 'insights', path: '/analytics', label: 'Analytics', icon: 'chart', page: 'analytics',
         describe: () => 'Proposals, events, BD and AM numbers and lost reasons, by period and brand.',
       },
       {
-        key: 'staffing', path: '/staffing', label: 'Staffing', icon: 'users', page: 'staffing',
+        key: 'staffing', group: 'people', path: '/staffing', label: 'Staffing', icon: 'users', page: 'staffing',
         describe: () => 'Facilitators for confirmed events: needed, assigned and missing.',
       },
       {
-        key: 'facilitators', path: '/facilitators', label: 'Facilitators', icon: 'clipboard', page: 'facilitators',
+        key: 'facilitators', group: 'people', path: '/facilitators', label: 'Facilitators', icon: 'user', page: 'facilitators',
         describe: () => 'Everyone we book for events: events attended, ratings and notes.',
       },
       {
-        key: 'admin', path: '/team', label: 'Admin', icon: 'settings', page: 'team',
+        key: 'admin', group: 'workspace', path: '/team', label: 'Admin', icon: 'settings', page: 'team',
         describe: () => 'Accounts, roles, routing, lists and occasions.',
       },
       {
-        key: 'screen', path: '/screen', label: 'Office screen', icon: 'dashboard', page: 'screen',
-        describe: () => 'This week, proposals in preparation and the latest confirmations, for the office TV.',
+        key: 'screen', group: 'workspace', path: '/screen', label: 'Office screen', icon: 'monitor', page: 'screen',
+        describe: () => 'This week’s events, what is being prepared, the latest confirmations and this month. TV mode fills the screen.',
       },
     ],
   },
@@ -125,6 +125,9 @@ export function canAccess(entry, pages) {
 }
 
 const MENU_LABELS = {}
+
+/** Menu groups: a quiet heading where the role's menu moves from one kind of page to the next. */
+export const NAV_GROUP_LABELS = { work: 'Work', insights: 'Insights', people: 'People', workspace: 'Workspace' }
 
 /** The label of a page for this role. */
 export const labelFor = (item, role) => MENU_LABELS[role]?.[item.path] ?? item.label

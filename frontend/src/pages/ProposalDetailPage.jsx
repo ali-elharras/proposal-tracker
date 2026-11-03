@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
+import StatusBadge from '../components/ui/StatusBadge.jsx'
+import BrandTag from '../components/ui/BrandTag.jsx'
 import Icon from '../components/ui/Icon.jsx'
 import PageLayout from '../components/layout/PageLayout.jsx'
 import Card from '../components/ui/Card.jsx'
@@ -46,9 +48,17 @@ function NotAvailable({ id }) {
   )
 }
 
-/** Detail page for one proposal request (/proposals/:id), with the actions this viewer may take. */
+/**
+ * Detail page for one proposal request (/proposals/:id), with the actions this viewer may take.
+ * Keyed by the id: going straight from one request to another (bell, links) starts fresh, so what was
+ * new, half-typed messages and forms never carry over, and the second request is marked read too.
+ */
 export default function ProposalDetailPage() {
   const { id } = useParams()
+  return <ProposalDetail key={id} id={id} />
+}
+
+function ProposalDetail({ id }) {
   const flash = useLocation().state?.flash // success message from the request form
   const { user, activeRole } = useCurrentUser()
   const { data: request, isLoading, error, notFound } = useProposalRequest(id)
@@ -68,7 +78,7 @@ export default function ProposalDetailPage() {
   const toast = useRouteToast()
 
   if (!request && isLoading) {
-    return <PageLayout title={id}><SkeletonRequest /></PageLayout>
+    return <PageLayout title={id} crumbs={[{ label: 'Proposals', to: '/proposals' }, { label: id }]}><SkeletonRequest /></PageLayout>
   }
   if (error && !request) {
     return (
@@ -99,16 +109,28 @@ export default function ProposalDetailPage() {
 
   return (
     <PageLayout
-      title={request.id}
-      subtitle={request.eventName
-        ? `${client?.name ?? request.clientName ?? 'Unknown client'} · ${request.eventName}`
-        : `${client?.name ?? request.clientName ?? 'Unknown client'} · ${getBrand(request.brand)?.name} · ${serviceLabel(request.brand, request.service)}`}
-      actions={(
-        <span className="page-tags">
-          {request.status === PS.ACCEPTED && <Link to={`/events/${encodeURIComponent(request.id)}`} className="btn">Open the event</Link>}
+      title={client?.name ?? request.clientName ?? 'Unknown client'}
+      crumbs={[{ label: 'Proposals', to: '/proposals' }, { label: request.id }]}
+      meta={(
+        <>
+          <StatusBadge kind="proposal" status={request.status} version={request.version} />
+          <span className="meta-sep" aria-hidden="true" />
+          <BrandTag brand={request.brand} />
+          <span className="muted">{serviceLabel(request.brand, request.service)}</span>
+          {request.eventName && <><span className="meta-sep" aria-hidden="true" /><span>{request.eventName}</span></>}
+          <span className="meta-sep" aria-hidden="true" />
+          <span className="muted tabular" title={getBrand(request.brand)?.name}>{request.id} · v{request.version}</span>
           {request.imported && <Badge tone="neutral">Imported</Badge>}
           {request.needsReview && <Badge tone="info">Needs review</Badge>}
-        </span>
+        </>
+      )}
+      actions={(
+        <>
+          <button type="button" className="btn btn--ghost" onClick={() => setHistoryOpen(true)}>
+            <Icon name="clock" size={16} /> History
+          </button>
+          {request.status === PS.ACCEPTED && <Link to={`/events/${encodeURIComponent(request.id)}`} className="btn btn--primary">Open the event</Link>}
+        </>
       )}
     >
       {flash && (
@@ -120,11 +142,6 @@ export default function ProposalDetailPage() {
           </span>
         </div>
       )}
-      <nav className="breadcrumb" aria-label="Breadcrumb">
-        <Link to="/proposals">Proposals</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{request.id}</span>
-      </nav>
       <LinkedTodos kind="request" id={request.id} />
 
       {request.status === PS.ACCEPTED && (
@@ -134,14 +151,11 @@ export default function ProposalDetailPage() {
       <WaitingBar request={request} onChange={() => setWaitingOpen(true)} canChange={waiting.set.allowed || waiting.clear.allowed} />
       {/* The progress bar; then two columns, nothing folded away. */}
       <ProgressSteps request={request} />
-      <p className="full-history-link">
-        <button type="button" className="link-btn" onClick={() => setHistoryOpen(true)}>Full history</button>
-      </p>
       <DetailsBanner key={`banner:${user.id}:${activeRole}`} request={request} />
       <div className="request-columns">
         <div className="request-columns__left">
-          <RequestOverview request={request} client={client} usersById={usersById} />
           <RequestRequirements request={request} />
+          <RequestOverview request={request} client={client} usersById={usersById} />
           <ProposalFiles request={request} usersById={usersById} />
           <ProposalVersions request={request} usersById={usersById} />
           <LinkedOpportunity opportunity={opportunity} client={client} usersById={usersById} />

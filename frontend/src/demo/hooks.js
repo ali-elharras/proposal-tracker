@@ -218,6 +218,16 @@ export function useClientActions() {
   return READ_ONLY_ACTIONS
 }
 
+/** The client's most recent earlier (submitted) request this viewer may see, or null (request form smart defaults). */
+export function useLastClientRequest(client, exceptId = null) {
+  const { data, viewer, usersById } = useViewerAccess()
+  const when = (r) => String(r.submittedAt ?? r.lastUpdated ?? '')
+  const latest = client ? data.proposalRequests
+    .filter((r) => r.clientId === client.id && r.id !== exceptId && r.status !== 'draft' && canSeeRequest(r, viewer, usersById))
+    .sort((a, b) => when(b).localeCompare(when(a)))[0] ?? null : null
+  return { ...result(latest), reload: () => {} }
+}
+
 export function useClientHistory() {
   return { ...result([]), reload: () => {} }
 }

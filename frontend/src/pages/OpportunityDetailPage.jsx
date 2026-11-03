@@ -100,12 +100,8 @@ export default function OpportunityDetailPage() {
   )
 
   return (
-    <PageLayout title={client?.name ?? opp.clientId} subtitle={brandService(opp)} actions={headerActions}>
-      <nav className="breadcrumb" aria-label="Breadcrumb">
-        <Link to="/opportunities">Opportunities</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{opp.id}</span>
-      </nav>
+    <PageLayout title={client?.name ?? opp.clientId} subtitle={brandService(opp)} actions={headerActions}
+      crumbs={[{ label: 'Opportunities', to: '/opportunities' }, { label: opp.id }]}>
       <div className="profile-meta">
         <StatusBadge kind="opportunity" status={opp.stage} />
         <span className="tabular">{formatCurrency(opp.estimatedValue)} <span className="muted">estimated</span></span>

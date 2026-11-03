@@ -32,15 +32,15 @@ export const ROLE_CONFIG = {
   },
   [ROLE.EXECUTIVE]: {
     label: 'Executive',
-    description: 'Sees everything across both brands; changes nothing.',
+    description: 'Sees everything across both brands to follow the numbers; with "Brings in clients" also handles their own clients.',
   },
   [ROLE.MARKETING]: {
     label: 'Marketing',
-    description: 'Nothing waits on Marketing yet.',
+    description: 'Sees events and gets the requests that wait on Marketing (designs, materials).',
   },
   [ROLE.OPERATIONS]: {
     label: 'Operations',
-    description: 'Nothing waits on Operations yet.',
+    description: 'Runs confirmed events, sets facilitators needed and gets the requests that wait on Operations.',
   },
   [ROLE.HR]: {
     label: 'HR',

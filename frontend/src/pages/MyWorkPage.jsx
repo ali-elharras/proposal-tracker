@@ -17,14 +17,15 @@ import { MyTodos } from '../components/Todos.jsx'
 import { findNavItem } from '../navigation.js'
 import { cairoTodayISO } from '../domain/events.js'
 import { optionLabel } from '../domain/lists.js'
-import { isRequestOverdue } from '../domain/metrics.js'
+import { isDeadlinePending, isRequestOverdue } from '../domain/metrics.js'
+import StatusPill from '../components/ui/StatusPill.jsx'
 import { followUpDue } from '../domain/tracker.js'
 import { daysWithMe, foldsGroups, myWorkSection, neededAction, sentBy, stuckDays, waitingOnOthers } from '../domain/myWork.js'
 import RelTime from '../components/ui/RelTime.jsx'
 import { ROLE } from '../domain/roles.js'
 import { PROPOSAL_STATUS as PS, getStage, getStatus, stageOf, subLabelFor } from '../domain/status.js'
 import { todosDueToday } from '../domain/todos.js'
-import { effectiveWaiting, getTeam, waitingDays } from '../domain/waiting.js'
+import { effectiveWaiting, getTeam, viewerPill, waitingDays } from '../domain/waiting.js'
 import { formatShortDate } from '../lib/format.js'
 import { proposalLink } from '../lib/links.js'
 
@@ -107,7 +108,7 @@ function MyWork({ subtitle }) {
   const client = {
     key: 'client', header: 'Client',
     render: (r) => (
-      <span className="stack">
+      <span className="cell-client">
         {r.newForYou && <span className="new-dot" aria-label="New for you" />}
         <ClientEvent name={clientsById[r.clientId]?.name ?? r.clientName} eventName={r.eventName} />
       </span>
@@ -126,7 +127,7 @@ function MyWork({ subtitle }) {
     },
     {
       key: 'deadline', header: 'Deadline', nowrap: true,
-      render: (r) => (r.requiredBy ? <DueDate date={r.requiredBy} active={!isClosed(r)} /> : <span className="muted">No deadline set</span>),
+      render: (r) => (r.requiredBy ? <DueDate date={r.requiredBy} active={!isClosed(r) && isDeadlinePending(r)} /> : <span className="muted">No deadline set</span>),
     },
   ]
   const columns = (what, { remind = false } = {}) => [
@@ -151,7 +152,7 @@ function MyWork({ subtitle }) {
       },
     },
     { key: 'who', header: 'Waiting on', render: (r) => <WaitingBar request={r} small /> },
-    { key: 'deadline', header: 'Deadline', nowrap: true, render: (r) => <DueDate date={r.requiredBy} active={!isClosed(r)} /> },
+    { key: 'deadline', header: 'Deadline', nowrap: true, render: (r) => <DueDate date={r.requiredBy} active={!isClosed(r) && isDeadlinePending(r)} /> },
     ...(remind ? [{ key: 'remind', header: '', nowrap: true, render: (r) => <RemindButton request={r} compact /> }] : []),
   ]
   const table = (rows, what, caption, opts) => (
@@ -218,12 +219,16 @@ function MyWork({ subtitle }) {
           )}
           {finished.length > 0 && (
             <Card title="Recently finished" flush>
-              {table(finished, 'Result', 'Recently finished')}
+              <DataTable caption="Recently finished" rows={finished} rowKey={(r) => r.id} rowHref={(r) => proposalLink(r.id)} rowPeek={(r) => r.id}
+                rowBrand={(r) => r.brand} columns={[
+                  client,
+                  { key: 'result', header: 'Result', nowrap: true, render: (r) => <StatusPill pill={viewerPill(r, viewer, usersById, today)} request={r} /> },
+                  { key: 'when', header: 'When', nowrap: true, render: (r) => <RelTime value={lastAt(r)} /> },
+                ]} />
             </Card>
           )}
         </div>
       )}
-      <p className="quiet-line">Due dates in red are overdue; due within 3 days is highlighted. {formatShortDate(today)}.</p>
     </PageLayout>
   )
 }

@@ -249,6 +249,30 @@ export function useOpportunities() {
   return useResource((signal) => api.get('/api/opportunities', undefined, { signal }).then((b) => b.items), 'all')
 }
 
+/**
+ * The client's most recent earlier request this viewer may see (for the request form's smart defaults:
+ * brand, service and participants from last time), or null. Searched by the client's name in each of the
+ * viewer's tracker scopes, kept to this exact client, and the newest one read in full.
+ */
+export function useLastClientRequest(client, exceptId = null) {
+  const { viewer } = useApi()
+  const { scopes } = useCurrentUser()
+  const key = client ? `${viewer.userId}:${viewer.activeRole}:${client.id}:${exceptId ?? ''}:${scopes.join(',')}` : ''
+  return useResource(async (signal) => {
+    let latest = null
+    const when = (r) => String(r.submittedAt ?? r.lastUpdated ?? '')
+    for (const scope of scopes) {
+      const body = await api.get('/api/proposal-requests', { scope, q: client.name.slice(0, 100), pageSize: 20, sort: 'updated' }, { signal })
+      for (const item of body.items) {
+        if (item.clientId !== client.id || item.id === exceptId || item.status === 'draft') continue
+        if (!latest || when(item) > when(latest)) latest = item
+      }
+    }
+    if (!latest) return null
+    return toRequest(await api.get(`/api/proposal-requests/${encodeURIComponent(latest.id)}`, undefined, { signal }))
+  }, key, { skip: !client })
+}
+
 /** Clients from GET /api/clients with the server's filters (q, type, brand, owner). */
 export function useClients(params = {}) {
   const query = { q: params.q?.trim(), type: params.type, brand: params.brand, owner: params.owner }
@@ -282,7 +306,7 @@ function useWrite() {
   const { invalidate } = useApi()
   return useCallback(async (send) => {
     try {
-      const body = await send()
+      const body = (await send()) ?? {} // 204 No Content (e.g. "mark read") has no body
       invalidate()
       return { ok: true, ...body, warnings: body.warnings ?? [] }
     } catch (e) {
@@ -586,12 +610,12 @@ export function useRadar() {
 }
 
 /** Staffing: events to staff, ratios, the HR numbers, "Rate facilitators". */
-export function useStaffing() {
+export function useStaffing({ skip = false } = {}) {
   const { viewer } = useApi()
   const key = `${viewer.userId}:${viewer.activeRole}`
   const write = useWrite()
-  const list = useResource((signal) => api.get('/api/staffing', undefined, { signal }), key)
-  const numbers = useResource((signal) => api.get('/api/staffing/dashboard', undefined, { signal }), key)
+  const list = useResource((signal) => api.get('/api/staffing', undefined, { signal }), key, { skip })
+  const numbers = useResource((signal) => api.get('/api/staffing/dashboard', undefined, { signal }), key, { skip })
   return {
     ...list, numbers: numbers.data, available: true,
     setRatio: (brand, service, perFacilitator) => write(() => api.post(`/api/staffing/ratios/${brand}/${service}`, { perFacilitator })),

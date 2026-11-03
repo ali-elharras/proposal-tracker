@@ -54,8 +54,6 @@ const BUILT = new Set(['/', '/queue', '/dashboard', '/proposals', '/events', '/c
 export default function App() {
   return (
     <Routes>
-      {/* The office screen: full screen, no menu (the office TV). */}
-      <Route path="/screen" element={<ScreenPage />} />
       <Route element={<AppShell />}>
         <Route index element={<HomeRoute />} />
         <Route path="/dashboard" element={<RoleGate path="/dashboard"><DashboardPage /></RoleGate>} />
@@ -76,6 +74,8 @@ export default function App() {
         <Route path="/team" element={<TeamPage />} />
         <Route path="/team/:id" element={<RoleGate path="/team"><PersonPage /></RoleGate>} />
         <Route path="/settings" element={<SettingsPage />} />
+        {/* The office screen: a page with the menu; "TV mode" puts it full screen for the office TV. */}
+        <Route path="/screen" element={<RoleGate path="/screen"><ScreenPage /></RoleGate>} />
         <Route path="/analytics" element={<RoleGate path="/analytics"><AnalyticsPage /></RoleGate>} />
         <Route path="/tasks" element={<RoleGate path="/tasks"><TasksPage /></RoleGate>} />
         {ALL_NAV_ITEMS.filter((item) => !BUILT.has(item.path)).map((item) => (

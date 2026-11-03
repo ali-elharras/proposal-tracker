@@ -305,11 +305,15 @@ test('reads the existing dashboard links', () => {
 test('invalid or not-allowed URL values fall back to defaults; state round-trips through the URL', () => {
   const { data } = setup(NOHA)
   const parse = (qs, viewer) => parseTrackerParams(new URLSearchParams(qs), viewer, data.users)
-  const bad = parse('scope=my_brand&tab=nope&brand=x&assignedAM=u-ahmed&bdOwner=u-noha&deadline=soon&sort=zzz', NOHA)
+  // u-mariam-dimitri is an Account Manager only: she owns no clients, so she is not a BD owner.
+  const bad = parse('scope=my_brand&tab=nope&brand=x&assignedAM=u-ahmed&bdOwner=u-mariam-dimitri&deadline=soon&sort=zzz', NOHA)
   assert.equal(bad.scope, SCOPE.COMPANY, 'Head has no "my brand" scope')
   assert.equal(bad.tab, TAB.ALL)
   assert.equal(bad.sort, SORT.UPDATED) // the default: most recent activity first
   assert.deepEqual([bad.filters.brand, bad.filters.assignedAM, bad.filters.bdOwner, bad.filters.deadline], ['', '', '', ''])
+  // Someone who owns clients through "Brings in clients" (no BD role) is a valid BD owner filter.
+  const owners = data.users.map((u) => (u.id === 'u-noha' ? { ...u, privileges: { ...u.privileges, bringsInClients: true } } : u))
+  assert.equal(parseTrackerParams(new URLSearchParams('bdOwner=u-noha'), NOHA, owners).filters.bdOwner, 'u-noha')
   assert.equal(parse('scope=company', MD_AM).scope, SCOPE.MY_BRAND, 'no other-brand tab without See all brands')
   const wide = data.users.map((u) => (u.id === MD_AM.userId ? { ...u, privileges: { ...u.privileges, seeAllBrands: true } } : u))
   assert.equal(parseTrackerParams(new URLSearchParams('scope=company'), MD_AM, wide).scope, SCOPE.COMPANY)

@@ -30,11 +30,12 @@ ClientType = Literal["school", "corporate", "agency", "other"]
 Brand = Literal["grasshoppers", "teamup"]
 
 
-def clients_for_creator_filter(actor: Actor):
-    """Mirrors the frontend's clientsForCreator: a BD only their own, the Commercial Head all, others none."""
+def clients_for_creator_filter(actor: Actor, users: dict):
+    """Mirrors domain clients_for_creator: the Commercial Head all; a BD, or anyone with "Brings in clients"
+    (Doaa as Executive), only their own; anyone else none."""
     if actor.active_role == cfg.COMMERCIAL_HEAD:
         return None
-    if actor.active_role == cfg.BUSINESS_DEVELOPMENT:
+    if access.acts_as_business_development(actor, users.get(actor.user_id)):
         return Client.owner_id == actor.user_id
     return False
 
@@ -61,13 +62,13 @@ def list_clients(
         stmt = stmt.where(Client.owner_id == owner)
     if brand:
         stmt = stmt.where(Client.brands.any(ClientBrand.brand == brand))
+    users = _users(db)
     if creatable:
-        rule = clients_for_creator_filter(actor)
+        rule = clients_for_creator_filter(actor, users)
         if rule is False:
             return ClientList(items=[], total=0)
         if rule is not None:
             stmt = stmt.where(rule)
-    users = _users(db)
     rows = [c for c in db.scalars(stmt).all() if access.can_see_client(c.brand_ids, actor, users)]  # role and brand
     return ClientList(items=[ClientOut.of(c) for c in rows], total=len(rows))
 

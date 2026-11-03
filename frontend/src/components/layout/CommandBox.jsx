@@ -21,7 +21,7 @@ export function CommandButton() {
     <button type="button" className="command-btn" onClick={() => window.dispatchEvent(new Event(OPEN_EVENT))}
       aria-keyshortcuts={isMac() ? 'Meta+K' : 'Control+K'}>
       <Icon name="search" size={16} />
-      <span className="command-btn__label">Search</span>
+      <span className="command-btn__label">Search or jump to…</span>
       <kbd>{isMac() ? '⌘ K' : 'Ctrl K'}</kbd>
     </button>
   )
@@ -149,21 +149,41 @@ function Box({ onClose }) {
   )
 }
 
+/**
+ * Requests matching the search in EVERY tracker scope this person has (BD: their own, then the
+ * company's; an AM with "See all brands": their brand, then the other), own scope first.
+ */
 export function RequestSource({ q, report }) {
-  const { user, activeRole, scopes } = useCurrentUser()
+  const { scopes } = useCurrentUser()
+  const [byScope, setByScope] = useState({})
+  const collect = useCallback((scope, items) => setByScope((prev) => (prev[scope] === items ? prev : { ...prev, [scope]: items })), [])
+  useEffect(() => {
+    const seen = new Set()
+    const all = []
+    for (const scope of scopes ?? []) {
+      for (const item of byScope[scope] ?? []) {
+        if (!seen.has(item.id)) { seen.add(item.id); all.push(item) }
+      }
+    }
+    report('requests', all)
+  }, [byScope, scopes, report])
+  return (scopes ?? []).map((scope) => <ScopeRequests key={scope} scope={scope} q={q} report={collect} />)
+}
+
+function ScopeRequests({ scope, q, report }) {
+  const { user, activeRole } = useCurrentUser()
   const users = useUsers().data
-  const scope = scopes?.includes('company') ? 'company' : scopes?.[0]
-  const parsed = parseTrackerParams(new URLSearchParams(scope ? { scope } : {}), { userId: user.id, activeRole }, users)
+  const parsed = parseTrackerParams(new URLSearchParams({ scope }), { userId: user.id, activeRole }, users)
   const state = { ...parsed, filters: { ...parsed.filters, q } }
   const { data } = useTracker(state, { page: 1, pageSize: 20 })
   useEffect(() => {
     if (!data) return
-    report('requests', data.rows.map((row) => ({
+    report(scope, data.rows.map((row) => ({
       id: `req:${row.request.id}`, label: [row.clientName, row.request.eventName].filter(Boolean).join(' · '),
       hint: row.request.id, brand: row.request.brand,
       to: row.opensEditor ? row.href : `${proposalLink(row.request.id)}`,
     })))
-  }, [data, report])
+  }, [data, report, scope])
   return null
 }
 

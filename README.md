@@ -12,15 +12,17 @@ One-time setup: create the backend environment (see `backend/README.md`, Setup) 
 Then, from this folder:
 
 ```
-./start-dev.ps1              # migrate, mark demo + seed (first run only), backend + frontend
-./start-dev.ps1 -ResetDemo   # same, but rebuild the demo database from scratch first
+./start-dev.ps1                        # the REAL data (backend/eventflow-real.db): the default
+./start-dev.ps1 -Data demo             # the demo data (backend/eventflow.db), for presentations
+./start-dev.ps1 -Data demo -ResetDemo  # rebuild the demo database from scratch first
+./start-dev.ps1 -Data present          # a fresh copy of the real data ("Presentation copy")
+./start-dev.ps1 -Data test [-Fresh]    # your persistent test copy of the real data ("Test copy")
 ```
 
 Open http://127.0.0.1:5173. The script:
-1. migrates the database;
-2. marks it as a demo database and loads the demo data. This happens on the first run only; later runs keep your changes.
-3. starts the backend on http://127.0.0.1:8000 in its own window, with the development identity on;
-4. starts the frontend in API mode in the current window.
+1. prepares the chosen database (migrates it; demo data is loaded on the first demo run only, later runs keep your changes);
+2. starts the backend on http://127.0.0.1:8000 in its own window, with the development identity on;
+3. starts the frontend in API mode in the current window.
 
 Or, as two commands in two terminals:
 
@@ -44,9 +46,9 @@ npm run dev -- --host 127.0.0.1
 | `api` | The default for `npm run dev`. The tracker, request pages, actions and the request form use the backend, so changes survive a reload. |
 | `demo` | The in-memory demo store, with no backend needed (`$env:VITE_DATA_SOURCE='demo'; npm run dev`). Changes reset on reload. |
 
-In API mode every page uses live data from the backend, except tasks. Tasks are not built yet: they show sample data, labelled as such, and the Tasks page is a preview.
+In API mode every page uses live data from the backend. Personal to-dos (My Work) are live too; the old sample tasks appear only on the demo database. The Opportunities and Tasks pages are switched off for everyone (open opportunities are listed on each client).
 
-The **"Development identity — not a login"** switcher chooses which team member and role the requests are sent as. This is not authentication.
+The **"Dev identity"** switcher at the bottom of the menu chooses which team member and role the requests are sent as. This is not authentication.
 
 ## Required before go-live
 

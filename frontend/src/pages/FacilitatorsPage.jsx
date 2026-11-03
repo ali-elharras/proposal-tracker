@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import PageLayout from '../components/layout/PageLayout.jsx'
 import Card from '../components/ui/Card.jsx'
 import DataTable from '../components/ui/DataTable.jsx'
+import { FilterBar, FilterMenu, FilterToggle, SearchBox } from '../components/ui/Filters.jsx'
 import { usePageDescription } from './PlaceholderPage.jsx'
 import { useFacilitators, useListActions, useLists } from '../data/hooks.js'
 import { findNavItem } from '../navigation.js'
@@ -52,23 +53,21 @@ export default function FacilitatorsPage() {
   return (
     <PageLayout title="Facilitators" subtitle={subtitle}
       actions={data?.canManage ? <button type="button" className="btn btn--primary" onClick={() => setAdding(true)}>+ Add facilitator</button> : null}>
-      <div className="page-toolbar">
-        <label className="form-field"><span className="form-field__label">Search</span>
-          <input type="search" placeholder="Name or skill" value={q} onChange={(e) => setQ(e.target.value)} /></label>
-        <label className="form-field"><span className="form-field__label">Brand</span>
-          <select value={brand} onChange={(e) => setBrand(e.target.value)}><option value="">Both</option>
-            {BRANDS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
-        <label className="form-field"><span className="form-field__label">Skill</span>
-          <select value={skill} onChange={(e) => setSkill(e.target.value)}><option value="">Any</option>
-            {visibleOptions(lists, 'facilitatorSkills').map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}</select></label>
-        <label className="form-field"><span className="form-field__label">Status</span>
-          <select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Any</option>
-            <option value="active">Active</option><option value="inactive">Inactive</option></select></label>
-        <label className="form-field"><span className="form-field__label">Sort</span>
-          <select value={sort} onChange={(e) => setSort(e.target.value)}>{SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
-        {data?.seeRatings && <label className="form-check"><input type="checkbox" checked={good} onChange={(e) => setGood(e.target.checked)} /><span>4★ and up</span></label>}
-        <label className="form-check"><input type="checkbox" checked={regular} onChange={(e) => setRegular(e.target.checked)} /><span>5+ events</span></label>
-      </div>
+      <FilterBar active={[q, brand, skill, status !== 'active' && 'status', good, regular].filter(Boolean).length}
+        onClear={() => { setQ(''); setBrand(''); setSkill(''); setStatus('active'); setGood(false); setRegular(false) }}
+        count={data ? `${rows.length} ${rows.length === 1 ? 'facilitator' : 'facilitators'}` : null}
+        end={<FilterMenu label="Sort" icon="arrowDown" clearable={false} value={sort} onChange={(v) => setSort(v || 'attended')}
+          options={SORTS.map((x) => ({ value: x.id, label: x.label }))} />}>
+        <SearchBox value={q} onChange={setQ} placeholder="Name or skill" />
+        <FilterMenu label="Status" value={status} anyLabel="Active and inactive" onChange={setStatus}
+          options={[{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]} />
+        <FilterMenu label="Brand" value={brand} anyLabel="Both brands" onChange={setBrand}
+          options={BRANDS.map((b) => ({ value: b.id, label: b.name }))} />
+        <FilterMenu label="Skill" value={skill} anyLabel="Any skill" onChange={setSkill}
+          options={visibleOptions(lists, 'facilitatorSkills').map((o) => ({ value: o.code, label: o.label }))} />
+        {data?.seeRatings && <FilterToggle label="4★ and up" on={good} onChange={setGood} />}
+        <FilterToggle label="5+ events" on={regular} onChange={setRegular} />
+      </FilterBar>
       {error && <p className="form-error" role="alert">{error.message}</p>}
       <Card flush>
         <DataTable caption="Facilitators" rows={rows} rowKey={(f) => f.id} rowHref={(f) => `/facilitators/${f.id}`}
@@ -88,7 +87,7 @@ export default function FacilitatorsPage() {
   )
 }
 
-/** The skills list (HR and Noha): add a skill; names are kept for every facilitator who has one. */
+/** The skills list (HR and Operations): add a skill; names are kept for every facilitator who has one. */
 function Skills() {
   const lists = useLists().data
   const { change } = useListActions()

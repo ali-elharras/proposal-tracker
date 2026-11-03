@@ -5,20 +5,22 @@ import { Person } from '../dashboard/cells.jsx'
 import { serviceLabel } from '../../domain/brands.js'
 import { formatCurrency, formatEventDate } from '../../lib/format.js'
 import { clientLink, opportunityLink } from '../../lib/links.js'
+import { useCurrentUser } from '../../data/hooks.js'
 
+/** The opportunity this request belongs to (nothing when there is none). Links only to pages this person may open. */
 export default function LinkedOpportunity({ opportunity, client, usersById }) {
+  const { pages } = useCurrentUser()
+  if (!opportunity) return null
   return (
     <Card title="Linked opportunity">
-      {!opportunity ? (
-        <p className="muted">This request is not linked to an opportunity.</p>
-      ) : (
+      {(
         <dl className="field-list field-list--1">
           <div className="field">
             <dt>Opportunity</dt>
             <dd>
-              <Link to={opportunityLink(opportunity.id)}>{opportunity.id}</Link>
+              {pages?.opportunities ? <Link to={opportunityLink(opportunity.id)}>{opportunity.id}</Link> : <span className="tabular">{opportunity.id}</span>}
               <span className="field__hint">
-                {client ? <Link to={clientLink(client.id)}>{client.name}</Link> : null} · {serviceLabel(opportunity.brand, opportunity.service)}
+                {client ? (pages?.clients ? <Link to={clientLink(client.id)}>{client.name}</Link> : client.name) : null} · {serviceLabel(opportunity.brand, opportunity.service)}
               </span>
             </dd>
           </div>

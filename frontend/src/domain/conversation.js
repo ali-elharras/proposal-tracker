@@ -12,6 +12,7 @@
  */
 
 import { actsAsBusinessDevelopment } from './access.js'
+import { ACTOR, checkActors } from './permissions.js'
 import { OTHER, checkCodes } from './lists.js'
 import { ROLE } from './roles.js'
 import { PROPOSAL_STATUS as PS, getStatus } from './status.js'
@@ -107,10 +108,20 @@ export function openChangeIds(messages = []) {
 }
 
 /** May this viewer post this kind of message? (comments: anyone who sees the request) */
+/** Statuses where "Change needed" also moves the request (request_changes / resume + request_revision). */
+const CHANGE_MOVES_STATUS = [PS.READY_FOR_BD, PS.SHARED_WITH_CLIENT, PS.POSTPONED]
+
 export function canPostMessage(kind, r, viewer, usersById = {}) {
   if (kind === 'comment' || kind === undefined || kind === null) return ok
-  if (kind === 'change') return canUpdateDetails(r, viewer, usersById).allowed ? ok
-    : deny('Only the BD owner or the Commercial Head can ask for a change.')
+  if (kind === 'change') {
+    if (!canUpdateDetails(r, viewer, usersById).allowed) return deny('Only the BD owner or the Commercial Head can ask for a change.')
+    // Once the proposal is ready (or with the client), "Change needed" sends it back to the AM: a status step
+    // only the BD owner takes. Before that it is only a card the AM picks up, which the Head may post too.
+    if (CHANGE_MOVES_STATUS.includes(r.status) && !checkActors([ACTOR.BD_OWNER], r, viewer, usersById).allowed) {
+      return deny('Once the proposal is ready, only the BD owner can send it back for changes.')
+    }
+    return ok
+  }
   if (kind === 'picked_up') {
     if (isClosed(r)) return deny('This request is closed.')
     return (viewer.userId === r.assignedAM && viewer.activeRole === ROLE.ACCOUNT_MANAGER) || viewer.activeRole === ROLE.COMMERCIAL_HEAD
@@ -148,6 +159,8 @@ export function canUpdateDetails(r, viewer, usersById = {}) {
  * input: any of DETAIL_FIELDS -> { errors, changes: [{ field, label, from, to }], values }.
  * Only the fields that change are checked (an imported request may lack others); nothing changed = no changes.
  */
+export const EVENT_BEFORE_DEADLINE = 'The event must start after the proposal deadline. Change the deadline too.'
+
 export function validateDetailsUpdate(request, input = {}, { today, lists } = {}) {
   const before = requestFields(request)
   const picked = Object.fromEntries(Object.entries(input).filter(([k]) => DETAIL_IDS.includes(k)))
@@ -157,7 +170,14 @@ export function validateDetailsUpdate(request, input = {}, { today, lists } = {}
     .filter((f) => JSON.stringify(was[f.id] ?? null) !== JSON.stringify(values[f.id] ?? null))
     .map((f) => ({ field: f.id, label: f.label, from: was[f.id] ?? null, to: values[f.id] ?? null }))
   const changed = new Set(changes.map((c) => c.field))
-  return { errors: Object.fromEntries(Object.entries(errors).filter(([f]) => changed.has(f))), changes, values }
+  const out = Object.fromEntries(Object.entries(errors).filter(([f]) => changed.has(f)))
+  // Only changed fields are checked (an old deadline may be in the past), but moving the event to on or before
+  // the unchanged proposal deadline is still refused: the deadline must stay before the event.
+  if ((changed.has('eventDate') || changed.has('eventDatePrecision')) && !changed.has('requiredBy') && !out.eventDate
+    && String(errors.requiredBy ?? '').startsWith('The proposal deadline must be before')) {
+    out.eventDate = EVENT_BEFORE_DEADLINE
+  }
+  return { errors: out, changes, values }
 }
 
 /** Show the "Details changed" banner: to the assigned AM (acting so) until they have seen the latest change. */

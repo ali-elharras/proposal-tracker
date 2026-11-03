@@ -65,7 +65,7 @@ export default function ExecutiveOverview({ subtitle }) {
             <ul className="short-list">
               {o.byBrand.map((b) => (
                 <li key={b.brand}><strong>{getBrand(b.brand)?.name ?? b.brand}</strong>
-                  <span className="tabular">{b.rate.value === null ? '—' : `${b.rate.value}%`} · {b.rate.part} of {b.rate.whole}</span></li>
+                  <span className="tabular">{b.rate.value === null ? `${b.rate.part} of ${b.rate.whole} (too few to rate)` : `${b.rate.value}% · ${b.rate.part} of ${b.rate.whole}`}</span></li>
               ))}
             </ul>
           </Card>

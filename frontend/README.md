@@ -21,18 +21,27 @@ npm test           # domain rules + shared contract scenarios
 
 | Page | What it shows |
 |---|---|
-| Home | Role dashboards on live data. Tasks are sample data. |
+| My Work | Everyone's first page: New, your turn, to-dos, waiting on others, recently finished (Marketing, Operations, HR: what waits on them). |
+| Dashboard | Role dashboards on live data: key counts, needs attention, the pipeline chart. |
 | Proposals | The tracker. |
-| Clients | List with "New client"; profile with Overview · Contacts · Opportunities · History, Edit, contacts, new opportunities, and (under More) Transfer owner (Commercial Head) and Archive. |
-| Opportunities | Board and table with "New opportunity"; detail page with Overview · Requests · History, Move stage, and (under More) Edit details and Mark lost. |
-| Tasks | Preview only, with sample tasks. |
+| Clients | List with "New client"; profile with Overview · Contacts · Events · History, Edit, "New proposal" for that client, contacts, new opportunities, and (under More) Transfer owner (Commercial Head) and Archive. |
+| Opportunities | Switched off for everyone (pageAccess); open opportunities show on each client. |
+| Tasks | Switched off for everyone; personal to-dos live on My Work. |
 | Analytics | Anyone with "See analytics" (data from `/api/analytics`). |
 | Team & Users | Anyone with "Manage accounts": "New account", each person's page (Edit, Deactivate / Reactivate, History). |
-| Settings | Anyone with "Manage accounts": brand routing can be changed; the rest is read-only. |
+| Settings | Anyone with "Manage accounts", in tabs: Routing · Dropdown lists · Occasions · Reference (read-only configuration). |
 
 - **Old addresses:** `/my-work`, `/operations` and `/dashboard` redirect to Home.
 - **Where the data comes from:** dashboards and Analytics use every request the viewer may see (`useAllRequests`). That is `GET /api/proposal-requests?include=history`, fetched per tracker scope, 100 per page (the server's limit), with further pages fetched as needed.
-- **Calculations:** all live in `src/domain/metrics.js`.
+- **Calculations:** the live numbers come from `src/domain/scorecard.js` and `src/domain/events.js`.
+
+## Design system (v2)
+
+- `src/styles/tokens.css`: every colour, radius, shadow and size as a token. Light is the default for everyone;
+  dark only when someone picks it at the bottom of the menu (`index.html` applies the choice before the first paint).
+- `src/styles/v2.css`: the look of every shared element (buttons, cards, fields, tables, tabs, panels, KPI cards,
+  the pipeline chart); loaded last. Phones get stacked table rows (each cell under its column name).
+- Pages use `PageLayout` (title, subtitle, `meta` line, actions, `crumbs` for pages inside a section).
 
 ## API mode (Phase 4A)
 
@@ -45,7 +54,6 @@ npm test           # domain rules + shared contract scenarios
   - Actions, edit rights, upload rights and tracker counts come from the server.
   - In API mode, permissions and transitions are never computed locally.
 - **`src/data/hooks.js`:** the module every screen imports. It picks the demo or API hooks once, at build time.
-- **Exception:** dashboards still read demo figures from `src/demo/hooks.js`, and take only the identity from `src/data/hooks.js`.
 - **Times:** shown in Africa/Cairo, whatever the computer's own time zone (`src/lib/format.js`).
 
 ## Structure

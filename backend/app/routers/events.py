@@ -183,6 +183,9 @@ def get_event(event_id: str, actor: Actor = Depends(get_current_actor), now: dat
     return _detail(db, row, users, actor, today)
 
 
+# "confirm" -> "confirmed" etc., for "it cannot be postponed now" (never "postponeed").
+_PAST = {"confirm": "confirmed", "postpone": "postponed", "changeDate": "moved to another date", "cancel": "cancelled"}
+
 EVENT_CHANGES = ("event_status_set", "event_confirmed", "event_postponed", "event_date_changed", "event_cancelled")
 
 
@@ -213,7 +216,7 @@ def _for_write(db: Session, event_id: str, actor: Actor, expected: int | None, a
     if not permission["allowed"]:
         raise ApiError(403, "forbidden", permission["reason"])
     if action is not None and action not in rules.event_actions(view, actor, users):
-        raise ApiError(409, "invalid_transition", f"This event is {rules.view_event_status(view)}; it cannot be {action}ed now.")
+        raise ApiError(409, "invalid_transition", f"This event is {rules.view_event_status(view)}; it cannot be {_PAST.get(action, action)} now.")
     return row, users
 
 

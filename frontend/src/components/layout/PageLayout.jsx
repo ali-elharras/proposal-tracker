@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import Icon from '../ui/Icon.jsx'
 import { WorkingAs } from './RoleToggle.jsx'
 
@@ -11,35 +11,51 @@ export function parentPath(pathname) {
   return parts.length > 1 ? `/${parts.slice(0, -1).join('/')}` : '/'
 }
 
-/** Back to the previous page in the app; one level up when the page was opened directly. Not on Home. */
+/** Back to the previous page in the app; one level up when the page was opened directly. */
 function BackButton() {
   const navigate = useNavigate()
   const location = useLocation()
-  if (location.pathname === '/') return null
   // React Router gives the first page of a tab the key "default": there is nothing in the app to go back to.
   const hasHistory = location.key !== 'default'
   return (
-    <button
-      type="button"
-      className="back-button"
-      onClick={() => (hasHistory ? navigate(-1) : navigate(parentPath(location.pathname)))}
-    >
+    <button type="button" className="back-button" aria-label="Back"
+      onClick={() => (hasHistory ? navigate(-1) : navigate(parentPath(location.pathname)))}>
       <Icon name="arrowLeft" size={16} strokeWidth={2} />
-      Back
     </button>
   )
 }
 
-/** Standard page frame used by every screen: Back, title, optional subtitle and actions, then content. */
-export default function PageLayout({ title, subtitle, actions, children }) {
+/**
+ * Standard page frame used by every screen. Pages from the menu show just their title; pages inside them
+ * show where they are (crumbs, e.g. Proposals / PR-2026-0007) with a Back arrow. Then the title, an
+ * optional subtitle and meta line (pills, tags), the actions on the right, and the content.
+ */
+export default function PageLayout({ title, subtitle, meta, actions, crumbs, children }) {
+  const { pathname } = useLocation()
+  const nested = pathname.split('/').filter(Boolean).length > 1
   return (
     <div className="page">
-      <BackButton />
+      {(nested || crumbs) && (
+        <div className="page-crumbs">
+          <BackButton />
+          {crumbs && (
+            <nav className="breadcrumb" aria-label="Breadcrumb">
+              {crumbs.map((c, i) => (
+                <span key={`${c.label}-${i}`} className="breadcrumb__item">
+                  {i > 0 && <Icon name="chevronRight" size={14} className="breadcrumb__sep" />}
+                  {c.to ? <Link to={c.to}>{c.label}</Link> : <span aria-current="page">{c.label}</span>}
+                </span>
+              ))}
+            </nav>
+          )}
+        </div>
+      )}
       <WorkingAs />
       <div className="page-header">
-        <div>
+        <div className="page-header__text">
           <h1 className="page-header__title">{title}</h1>
           {subtitle && <p className="page-header__subtitle">{subtitle}</p>}
+          {meta && <div className="page-header__meta">{meta}</div>}
         </div>
         {actions && <div className="page-header__actions">{actions}</div>}
       </div>

@@ -82,6 +82,14 @@ export function canOwnClients(user) {
     && (user.roles.includes(ROLE.BUSINESS_DEVELOPMENT) || hasPrivilege(user, PRIVILEGE.BRINGS_IN_CLIENTS))
 }
 
+/**
+ * Who can be a client's BD owner at all, active or not (for filters by owner: former owners still own
+ * records). The BD role, or "Brings in clients" (Noha, Doaa) without it.
+ */
+export function isClientOwnerKind(user) {
+  return Boolean(user) && (user.roles.includes(ROLE.BUSINESS_DEVELOPMENT) || hasPrivilege(user, PRIVILEGE.BRINGS_IN_CLIENTS))
+}
+
 // ---------------------------------------------------------------------------
 // Data visibility (follows the ACTIVE role)
 // ---------------------------------------------------------------------------

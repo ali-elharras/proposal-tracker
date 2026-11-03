@@ -17,14 +17,22 @@ body {
   font-family: var(--font-sans);
   font-size: var(--text-md);
   line-height: 1.5;
+  font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 h1,
 h2,
 h3,
+h4,
 p {
   margin: 0;
+}
+
+h1, h2, h3, h4 {
+  letter-spacing: -0.011em;
 }
 
 a {
@@ -32,11 +40,47 @@ a {
   text-decoration: none;
 }
 
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Links that look like buttons, rows or cards never underline. */
+a.btn:hover,
+a.card:hover,
+a[class*='sidebar__']:hover,
+a[class*='__link']:hover,
+a.cal__event:hover,
+a.queue-card:hover {
+  text-decoration: none;
+}
+
+/* Every control uses the app's type (textareas included: browsers default them to monospace). */
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
+}
+
+input,
+select,
+textarea {
+  background-color: var(--surface);
+}
+
+textarea {
+  line-height: 1.5;
+}
+
+::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+::selection {
+  background: var(--accent-soft-border);
 }
 
 button {
@@ -72,4 +116,10 @@ ul {
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* Quiet, thin scrollbars that follow the theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }

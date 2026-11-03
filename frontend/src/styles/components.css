@@ -1704,18 +1704,7 @@ ul + .popover__section {
 .data-table tr.is-new td { font-weight: 600; }
 .data-table tr.is-due-soon td:last-child { background: var(--info-bg); }
 .new-line { font-size: var(--text-xs); color: var(--info-text); font-weight: 600; }
-.sidebar__count {
-  margin-inline-start: auto;
-  min-width: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--info-text);
-  color: var(--text-on-accent);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  line-height: 20px;
-  text-align: center;
-}
+
 
 /* ---------- Request and event pages: two columns, nothing folded ---------- */
 .request-columns {
@@ -1822,13 +1811,6 @@ ul + .popover__section {
 .cal__strip-label { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-right: 4px; }
 .cal__strip .cal__event { display: inline-block; }
 
-/* ---------- Menu groups: Dashboard and Events, with their pages ---------- */
-.sidebar__group { display: grid; gap: 1px; margin: 2px 0; }
-.sidebar__group-label { display: flex; align-items: center; gap: 10px; padding: 8px 12px 4px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
-.sidebar__link--sub { padding-left: 40px; font-size: 13px; min-height: 30px; }
-.sidebar__subcount { margin-left: auto; font-size: 12px; color: var(--text-muted); }
-.sidebar__link--sub.is-active .sidebar__subcount { color: inherit; }
-
 /* "Days with me" past the deadline, or 14+ days without one */
 .text-danger { color: var(--danger-text); font-weight: 600; }
 
@@ -1849,31 +1831,6 @@ ul + .popover__section {
 .ratio-edit { display: inline-flex; align-items: center; gap: 6px; }
 .occasion-row { align-items: center; }
 .occasion-period { margin-right: 8px; }
-
-/* ---------- The office screen (TV: 1920×1080, readable across the room) ---------- */
-.screen { --s-bg: #f6f7f9; --s-card: #ffffff; --s-text: #101828; --s-muted: #475467; --s-line: #e4e7ec; --s-accent: #175cd3; --s-fresh: #fef0c7;
-  min-height: 100vh; background: var(--s-bg); color: var(--s-text); padding: 2vw 2.5vw; box-sizing: border-box; font-size: clamp(16px, 1.25vw, 28px); }
-.screen[data-theme="dark"] { --s-bg: #0b1220; --s-card: #131c2e; --s-text: #f2f4f7; --s-muted: #98a2b3; --s-line: #26324a; --s-accent: #84adff; --s-fresh: #4a3a10; }
-.screen__head { display: flex; align-items: baseline; gap: 2vw; margin-bottom: 1.5vw; }
-.screen__head h1 { margin: 0; font-size: 2.2em; letter-spacing: 0.04em; }
-.screen__updated { color: var(--s-muted); margin-left: auto; }
-.screen__theme { font: inherit; font-size: 0.8em; padding: 0.3em 0.9em; border-radius: 999px; border: 1px solid var(--s-line); background: var(--s-card); color: var(--s-text); cursor: pointer; }
-.screen__grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1.5vw; height: calc(100vh - 8vw); }
-.screen__area { background: var(--s-card); border: 1px solid var(--s-line); border-radius: 16px; padding: 1.4vw 1.6vw; overflow: hidden; }
-.screen__area h2 { margin: 0 0 0.8em; font-size: 1.35em; display: flex; align-items: baseline; gap: 0.5em; }
-.screen__count { color: var(--s-accent); }
-.screen__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55em; }
-.screen__list li { display: flex; gap: 1em; align-items: baseline; padding: 0.15em 0.4em; border-radius: 8px; }
-.screen__date { flex: none; min-width: 7.5em; color: var(--s-muted); }
-.screen__main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.screen__brand, .screen__days, .screen__brands, .screen__more, .screen__empty { color: var(--s-muted); }
-.screen__days { flex: none; font-variant-numeric: tabular-nums; }
-.screen__big { margin: 0.2em 0; font-size: 2.6em; font-weight: 700; font-variant-numeric: tabular-nums; }
-.screen__big span { font-size: 0.45em; font-weight: 400; color: var(--s-muted); }
-.screen__notice { font-size: 1.4em; }
-.screen__list li.is-fresh { background: var(--s-fresh); animation: screen-fresh 2.4s ease-out 1; }
-@keyframes screen-fresh { from { transform: scale(1.03); } to { transform: none; } }
-@media (prefers-reduced-motion: reduce) { .screen__list li.is-fresh { animation: none; } }
 
 /* Dashboard tabs above a role's overview */
 .page--tabs-only { padding-bottom: 0; }

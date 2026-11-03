@@ -45,7 +45,7 @@ def test_upgrade_downgrade_upgrade(tmp_path):
     tables, triggers, rev = snapshot(url)
     assert tables == TABLES
     assert triggers == TRIGGERS
-    assert rev == head_revision(url) == "0018"
+    assert rev == head_revision(url) == "0019"
 
     command.downgrade(config, "base")
     tables, triggers, rev = snapshot(url)
@@ -63,6 +63,26 @@ def test_migrated_schema_matches_the_models(tmp_path):
         diff = compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata)
     eng.dispose()
     assert diff == [], f"models and migration differ: {diff}"
+
+
+def test_every_role_check_accepts_every_role(tmp_path):
+    """compare_metadata does not compare CHECK constraints: every table that records a role must accept all of
+    them (HR and the office screen included), or a write by someone acting in that role fails in the database."""
+    import re
+    from app.config_domain import ROLES
+    url = sqlite_url(tmp_path / "m.db")
+    command.upgrade(alembic_config(url), "head")
+    eng = create_engine(url)
+    with eng.connect() as conn:
+        tables = conn.execute(text("SELECT name, sql FROM sqlite_master WHERE type = 'table'")).all()
+    eng.dispose()
+    narrow = {"proposal_files"}  # only the AM, the BD and the Commercial Head ever upload a file
+    for name, sql in tables:
+        for check in re.findall(r"\brole IN \(([^)]*)\)", sql or ""):
+            if name in narrow:
+                continue
+            missing = [r for r in ROLES if f"'{r}'" not in check]
+            assert not missing, f"{name}: role CHECK misses {missing}"
 
 
 def test_history_is_append_only_at_the_database_level(seeded, engine):

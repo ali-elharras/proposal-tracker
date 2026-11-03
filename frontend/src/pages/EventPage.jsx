@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import PageLayout from '../components/layout/PageLayout.jsx'
 import Card from '../components/ui/Card.jsx'
+import Icon from '../components/ui/Icon.jsx'
 import EmptyState from '../components/ui/EmptyState.jsx'
 import MoreMenu from '../components/ui/MoreMenu.jsx'
 import SidePanel from '../components/ui/SidePanel.jsx'
@@ -11,7 +12,7 @@ import { Person } from '../components/dashboard/cells.jsx'
 import { Field, FormAlert, PanelButtons, successText, usePanelForm } from '../components/crm/formParts.jsx'
 import { useCurrentUser, useEvent, useEventActions, useLists, useLookups, useSampleTasks } from '../data/hooks.js'
 import { api } from '../api/client.js'
-import { getBrand, serviceLabel } from '../domain/brands.js'
+import { serviceLabel } from '../domain/brands.js'
 import {
   EVENT_STATUS, EVENT_STATUS_LABELS, EVENT_TIMING_LABELS, PRELIMINARY, eventPill, validateEventCancel, validateEventDateChange, validateEventPostpone,
 } from '../domain/events.js'
@@ -102,16 +103,28 @@ export default function EventPage() {
   return (
     <PageLayout
       title={ev.clientName ?? ev.id}
-      subtitle={[ev.eventName, formatEventDate(ev.eventDate, ev.eventEndDate, ev.eventDatePrecision), getBrand(ev.brand)?.name]
-        .filter(Boolean).join(' · ')}
-      actions={<button type="button" className="btn" onClick={sheet}>Download event sheet (PDF)</button>}
+      meta={(
+        <>
+          <StatusPill pill={eventPill(ev.timing, status)} />
+          <span className="meta-sep" aria-hidden="true" />
+          <BrandTag brand={ev.brand} />
+          <span className="muted">{serviceLabel(ev.brand, ev.service)}</span>
+          {ev.eventName && <><span className="meta-sep" aria-hidden="true" /><span>{ev.eventName}</span></>}
+          <span className="meta-sep" aria-hidden="true" />
+          <span>{ev.eventDate ? formatEventDate(ev.eventDate, ev.eventEndDate, ev.eventDatePrecision) : 'Date not set'}</span>
+        </>
+      )}
+      actions={(
+        <>
+          <button type="button" className="btn btn--ghost" onClick={sheet}><Icon name="document" size={16} /> Event sheet (PDF)</button>
+          {more.length > 0 && <MoreMenu items={more} />}
+          {can.has('confirm') && <button type="button" className="btn btn--primary" onClick={() => setPanel('confirm')}>Confirm event</button>}
+        </>
+      )}
+      crumbs={[{ label: 'Events', to: '/events' }, { label: ev.id }]}
     >
-      <nav className="breadcrumb" aria-label="Breadcrumb">
-        <Link to="/events">Events</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{ev.id}</span>
-      </nav>
       <LinkedTodos kind="event" id={ev.id} />
+      {status === EVENT_STATUS.INITIAL && ev.timing !== 'done' && <p className="details-banner details-banner--warning">{PRELIMINARY}</p>}
       {ev.timing === 'cancelled' && (
         <p className="details-banner">
           <strong>{EVENT_TIMING_LABELS.cancelled}</strong>: {optionLabel(lists, 'eventCancelReasons', ev.eventCancelReason)}
@@ -141,9 +154,10 @@ export default function EventPage() {
         </Card>
         <Card title="Brief and requirements">
           <p className="prose">{ev.brief || <span className="muted">No brief recorded.</span>}</p>
-          <p className="muted">Quick tags: {ev.briefTags?.length ? ev.briefTags.map((c) => optionLabel(lists, 'briefTags', c)).join(' · ') : '—'}</p>
-          <h3 className="section-label">Requirements</h3>
-          <p className="prose">{ev.specificRequirements || '—'}</p>
+          {ev.briefTags?.length > 0 && (
+            <p className="tag-row">{ev.briefTags.map((c) => <span key={c} className="tag">{optionLabel(lists, 'briefTags', c)}</span>)}</p>
+          )}
+          {ev.specificRequirements && <><h3 className="section-label">Requirements</h3><p className="prose">{ev.specificRequirements}</p></>}
           {ev.teamNotes && <><h3 className="section-label">Notes for the team</h3><p className="prose">{ev.teamNotes}</p></>}
           <div className="card-actions">
             {ev.file && actions.fileUrl && (
@@ -157,20 +171,11 @@ export default function EventPage() {
         </Card>
         </div>
         <div className="request-columns__right">
-        <Card title="Status">
-          <div className="next-step__buttons">
-            <StatusPill pill={eventPill(ev.timing, status)} />
-            {can.has('confirm') && <button type="button" className="btn btn--primary btn--sm" onClick={() => setPanel('confirm')}>Confirm event</button>}
-            {more.length > 0 && <MoreMenu items={more} />}
-          </div>
-          {status === EVENT_STATUS.INITIAL && ev.timing !== 'done' && <p className="preliminary">{PRELIMINARY}</p>}
-          {!can.size && (
-            <p className="muted">{ev.timing === 'cancelled' ? 'This event was cancelled.'
-              : 'Only the BD owner or the Commercial Head changes the event status.'}</p>
-          )}
-        </Card>
-        <Card title="Operations tasks">
-          {opsTasks.length ? (
+        {!can.size && ev.timing !== 'cancelled' && (
+          <p className="quiet-line">Only the BD owner or the Commercial Head changes the event status.</p>
+        )}
+        {opsTasks.length > 0 && (
+          <Card title="Operations tasks" subtitle="Sample data (demo only)">
             <ul className="plain-list">
               {opsTasks.map((t) => (
                 <li key={t.id}>
@@ -179,9 +184,8 @@ export default function EventPage() {
                 </li>
               ))}
             </ul>
-          ) : <p className="muted">No Operations tasks for this event.</p>}
-          <p className="quiet-line">Tasks are sample data for now; completing them comes with the task feature.</p>
-        </Card>
+          </Card>
+        )}
         <EventStaffingCard event={ev} />
         <Card title="Notes and changes">
           <ol className="thread">

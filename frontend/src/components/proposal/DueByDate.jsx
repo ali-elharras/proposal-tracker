@@ -5,6 +5,7 @@ import { ClientEvent, DueDate } from '../dashboard/cells.jsx'
 import { WaitingBar } from './WaitingOn.jsx'
 import { useLookups } from '../../data/hooks.js'
 import { dueGroups } from '../../domain/deadlines.js'
+import { isDeadlinePending } from '../../domain/metrics.js'
 import { proposalLink } from '../../lib/links.js'
 
 /**
@@ -26,7 +27,7 @@ export default function DueByDate({ requests, today }) {
     },
     { key: 'status', header: 'Stage', nowrap: true, render: (r) => <StatusBadge kind="proposal" status={r.status} version={r.version} compact /> },
     { key: 'who', header: 'Waiting on', render: (r) => <WaitingBar request={r} small /> },
-    { key: 'deadline', header: 'Deadline', nowrap: true, render: (r) => <DueDate date={r.requiredBy} active /> },
+    { key: 'deadline', header: 'Deadline', nowrap: true, render: (r) => <DueDate date={r.requiredBy} active={isDeadlinePending(r)} /> },
   ]
   if (!groups.length) return <Card><p className="data-table__empty">No open requests.</p></Card>
   return (

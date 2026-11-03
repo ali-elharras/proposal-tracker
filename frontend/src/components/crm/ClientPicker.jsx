@@ -2,6 +2,7 @@ import { useId, useMemo, useState } from 'react'
 import { CLIENT_TYPES } from '../../domain/catalog.js'
 import { canOwnClients } from '../../domain/access.js'
 import { didYouMean, searchClients } from '../../domain/crm.js'
+import { guessClientType, tidyPhone } from '../../domain/smartDefaults.js'
 
 /**
  * The Client field of the request and opportunity forms: type to search the clients this person
@@ -15,7 +16,7 @@ import { didYouMean, searchClients } from '../../domain/crm.js'
  */
 export default function ClientPicker({
   id, clients, allClients = clients, value, onChoose, newClient, onNewClient, canAdd, isHead, usersById, brandName,
-  errors = {}, describedBy,
+  errors = {}, describedBy, selfId = null,
 }) {
   const listId = useId()
   const chosen = clients.find((c) => c.id === value) ?? null
@@ -34,6 +35,8 @@ export default function ClientPicker({
     ...(canAdd && typed && !exact ? [{ kind: 'new' }] : []),
   ]
 
+  const owners = isHead ? Object.values(usersById).filter(canOwnClients) : []
+
   function choose(option) {
     setOpen(false)
     if (option.kind === 'client') {
@@ -42,7 +45,8 @@ export default function ClientPicker({
       onChoose(option.client.id)
     } else {
       onChoose('')
-      onNewClient({ name: typed, type: '', contactName: '', contactPhone: '', owner: '' })
+      // The type a name suggests ("…School" → School), still one click to change.
+      onNewClient({ name: typed, type: guessClientType(typed), contactName: '', contactPhone: '', owner: isHead && owners.some((u) => u.id === selfId) ? selfId : '' })
     }
   }
 
@@ -56,8 +60,13 @@ export default function ClientPicker({
   const similarId = newClient ? didYouMean(newClient.name, allClients) : null
   const similar = similarId ? allClients.find((c) => c.id === similarId) : null
   const usable = similar && clients.some((c) => c.id === similar.id)
-  const owners = isHead ? Object.values(usersById).filter(canOwnClients) : []
-  const setNew = (field) => (e) => onNewClient({ ...newClient, [field]: e.target.value })
+  const setNew = (field) => (e) => {
+    const value = e.target.value
+    const next = { ...newClient, [field]: value }
+    // Renaming keeps the guessed type in step, unless the type was picked by hand.
+    if (field === 'name' && newClient.type === guessClientType(newClient.name)) next.type = guessClientType(value)
+    onNewClient(next)
+  }
 
   return (
     <div className="client-picker">
@@ -151,7 +160,8 @@ export default function ClientPicker({
             </div>
             <div className="form-field">
               <label className="form-field__label" htmlFor={`${id}-new-phone`}>Phone (optional)</label>
-              <input id={`${id}-new-phone`} type="tel" value={newClient.contactPhone} onChange={setNew('contactPhone')} />
+              <input id={`${id}-new-phone`} type="tel" placeholder="010 1234 5678" value={newClient.contactPhone} onChange={setNew('contactPhone')}
+                onBlur={(e) => onNewClient({ ...newClient, contactPhone: tidyPhone(e.target.value) })} />
               {errors['newClient.contact.phone'] && <span className="form-field__error" role="alert">{errors['newClient.contact.phone']}</span>}
             </div>
           </div>

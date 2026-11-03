@@ -26,6 +26,8 @@ test('days with me: red after the deadline, or after 14 days without one', () =>
   assert.deepEqual(daysWithMe(r({ statusHistory: since('2026-10-07T10:00:00Z') }), '2026-10-27', now), { days: 20, late: true })
   assert.deepEqual(daysWithMe(r({ statusHistory: since('2026-10-20T10:00:00Z') }), '2026-10-27', now), { days: 7, late: false })
   assert.equal(daysWithMe(r({ requiredBy: '2026-10-26', statusHistory: since('2026-10-25T10:00:00Z') }), '2026-10-27', now).late, true)
+  // The AM's deadline no longer applies once the proposal is with BD: only the 14-day rule.
+  assert.equal(daysWithMe(r({ status: 'ready_for_bd', requiredBy: '2026-10-26', statusHistory: since('2026-10-25T10:00:00Z') }), '2026-10-27', now).late, false)
 })
 
 test('a money total with no prices behind it is never "EGP 0"', () => {

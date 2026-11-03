@@ -34,7 +34,12 @@ export default function AccountForm({ account = null, onClose, onSaved, onReload
   const toggleRole = (role) => (e) => {
     setValues((prev) => {
       const roles = e.target.checked ? [...prev.roles, role] : prev.roles.filter((r) => r !== role)
-      return { ...prev, roles, privileges: defaultPrivileges(roles) } // each role's usual switches
+      // Each role's usual switches, except a switch someone set by hand (it differs from the old roles' default):
+      // that one is kept, e.g. Noha's "Brings in clients" stays on when a role is added.
+      const before = defaultPrivileges(prev.roles)
+      const after = defaultPrivileges(roles)
+      const privileges = Object.fromEntries(Object.keys(after).map((p) => [p, prev.privileges[p] === before[p] ? after[p] : prev.privileges[p]]))
+      return { ...prev, roles, privileges }
     })
     setErrors((prev) => ({ ...prev, roles: undefined, privileges: undefined }))
   }

@@ -15,7 +15,7 @@ import { usePageDescription } from './PlaceholderPage.jsx'
 import { useCurrentUser, useLookups, useOpportunities, useUsers } from '../data/hooks.js'
 import { findNavItem } from '../navigation.js'
 import { BRANDS } from '../domain/brands.js'
-import { ROLE } from '../domain/roles.js'
+import { isClientOwnerKind } from '../domain/access.js'
 import { statusList } from '../domain/status.js'
 import { isActiveOpportunity } from '../domain/metrics.js'
 import { formatCurrency, formatEventDate } from '../lib/format.js'
@@ -63,7 +63,7 @@ export default function OpportunitiesPage() {
     (!brand || o.brand === brand) && (!owner || o.owner === owner)
     && (!stagesFromLink.length || stagesFromLink.includes(o.stage)) && (!activeOnly || isActiveOpportunity(o)))
   const shownStages = activeOnly ? stages.filter((s) => !s.closed) : stages
-  const bds = users.filter((u) => u.roles.includes(ROLE.BUSINESS_DEVELOPMENT))
+  const bds = users.filter(isClientOwnerKind) // BD role or "Brings in clients"
   const total = opportunities.reduce((sum, o) => sum + (o.estimatedValue ?? 0), 0)
 
   // Business Development (for their own clients) and the Commercial Head add opportunities.

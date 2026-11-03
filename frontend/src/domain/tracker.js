@@ -13,7 +13,7 @@ import { ROLE } from './roles.js'
 import { PROPOSAL_STATUS, getStage, getStatus, stageList, stageOf, statusList, subLabelFor } from './status.js'
 import { ACTOR, holdsResponsibility } from './permissions.js'
 import { canViewRequest, responsibleFor } from './proposals.js'
-import { PRIVILEGE, canSeeBrand, hasPrivilege } from './access.js'
+import { PRIVILEGE, canSeeBrand, hasPrivilege, isClientOwnerKind } from './access.js'
 import { canEditDraft, eventStartDate } from './workflow.js'
 import {
   UPCOMING_WINDOW_DAYS, isDeadlinePending, isDeadlineUpcoming, isDraft, isOpenRequest, isRequestOverdue, isStale,
@@ -328,7 +328,8 @@ export function parseTrackerParams(params, viewer, users) {
   const scopes = scopesFor(viewer.activeRole, me).map((s) => s.id)
   const userIds = new Set(users.map((u) => u.id))
   const amIds = new Set(users.filter((u) => u.roles.includes(ROLE.ACCOUNT_MANAGER)).map((u) => u.id))
-  const bdIds = new Set(users.filter((u) => u.roles.includes(ROLE.BUSINESS_DEVELOPMENT)).map((u) => u.id))
+  const bdIds = new Set(users.filter(isClientOwnerKind).map((u) => u.id)) // BD role or "Brings in clients"
+
   return {
     scope: scopes.includes(get('scope')) ? get('scope') : defaultScope(viewer.activeRole, me),
     tab: TABS.some((t) => t.id === get('tab')) ? get('tab') : TAB.ALL,

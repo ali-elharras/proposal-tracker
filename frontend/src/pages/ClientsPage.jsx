@@ -9,33 +9,42 @@ import Toast, { useRouteToast } from '../components/ui/Toast.jsx'
 import { Person } from '../components/dashboard/cells.jsx'
 import ClientForm from '../components/crm/ClientForm.jsx'
 import { usePageDescription } from './PlaceholderPage.jsx'
-import { useClients, useCurrentUser, useLookups, useUsers } from '../data/hooks.js'
+import { useClients, useCurrentUser, useLists, useLookups, useUsers } from '../data/hooks.js'
 import { findNavItem } from '../navigation.js'
-import { BRANDS, getBrand } from '../domain/brands.js'
+import { BRANDS } from '../domain/brands.js'
 import { CLIENT_TYPES } from '../domain/catalog.js'
 import { ROLE } from '../domain/roles.js'
-import { clientLink } from '../lib/links.js'
+import { isClientOwnerKind } from '../domain/access.js'
+import { FilterBar, FilterMenu, SearchBox } from '../components/ui/Filters.jsx'
+import { optionLabel } from '../domain/lists.js'
+import BrandTag from '../components/ui/BrandTag.jsx'
+import { clientLink, newRequestLink } from '../lib/links.js'
 import Tabs from '../components/ui/Tabs.jsx'
 import RadarSection from '../components/RadarSection.jsx'
 import useTab from '../lib/useTab.js'
+import useRememberedFilters from '../lib/useRememberedFilters.js'
 
 /**
  * Clients: search and filters in the URL; BD can switch between their own and all clients.
  * The one main action is "New client" (BD, who becomes the owner, or the Commercial Head).
  * Archived clients are not listed.
  */
+const SKIP_KEYS = ['page', 'peek', 'past'] // never remembered: the page number and one-off panels
+
 export default function ClientsPage() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
-  const { user, activeRole, createClients } = useCurrentUser()
+  const { user, activeRole, createClients, createRequests } = useCurrentUser()
   const { usersById } = useLookups()
   const users = useUsers().data
+  const lists = useLists().data
   const subtitle = usePageDescription(findNavItem('/clients'))
   const [creating, setCreating] = useState(false)
   const toast = useRouteToast() // e.g. after archiving a client
   const isBD = activeRole === ROLE.BUSINESS_DEVELOPMENT
   // "Likely to book soon": BD (their clients), Noha and the Executives (all, by BD owner).
   const radarRole = [ROLE.BUSINESS_DEVELOPMENT, ROLE.COMMERCIAL_HEAD, ROLE.EXECUTIVE].includes(activeRole)
+  useRememberedFilters(`iee.filters.clients.${user.id}:${activeRole}`, SKIP_KEYS)
   const [tab, setTab] = useTab(radarRole ? ['all', 'radar'] : ['all'], 'all')
 
   const view = isBD && params.get('view') !== 'all' ? 'mine' : 'all'
@@ -47,9 +56,9 @@ export default function ClientsPage() {
   }
   const filtered = Boolean(filters.q || filters.type || filters.brand || (view === 'all' && filters.owner))
   const { data: clients, isLoading, error } = useClients(filters)
-  const set = (key) => (e) => {
+  const setValue = (key) => (value) => {
     const next = new URLSearchParams(params)
-    if (e.target.value) next.set(key, e.target.value)
+    if (value) next.set(key, value)
     else next.delete(key)
     setParams(next, { replace: true })
   }
@@ -59,7 +68,7 @@ export default function ClientsPage() {
     else { next.delete('view'); next.delete('owner') }
     setParams(next, { replace: true })
   }
-  const bds = users.filter((u) => u.roles.includes(ROLE.BUSINESS_DEVELOPMENT))
+  const bds = users.filter(isClientOwnerKind) // BD role or "Brings in clients"
   const newClientButton = createClients.allowed && (
     <button type="button" className="btn btn--primary" onClick={() => setCreating(true)}>
       <Icon name="plus" size={16} strokeWidth={2.25} /> New client
@@ -74,45 +83,29 @@ export default function ClientsPage() {
       )}
       {tab === 'radar' ? <RadarSection /> : (
       <Card flush>
-        <div className="page-toolbar">
+        <FilterBar
+          active={[filters.q, filters.type, filters.brand, view === 'all' && filters.owner].filter(Boolean).length}
+          onClear={() => {
+            const next = new URLSearchParams(params)
+            for (const k of ['q', 'type', 'brand', 'owner']) next.delete(k)
+            setParams(next, { replace: true })
+          }}
+          count={error ? error.message : isLoading && !clients ? 'Loading…' : `${clients.length} ${clients.length === 1 ? 'client' : 'clients'}`}
+        >
           {isBD && (
-            <div className="form-field">
-              <span className="form-field__label">Show</span>
-              <SegmentedControl label="Which clients" value={view} onChange={setView}
-                options={[{ value: 'mine', label: 'My clients' }, { value: 'all', label: 'All clients' }]} />
-            </div>
+            <SegmentedControl label="Which clients" value={view} onChange={setView}
+              options={[{ value: 'mine', label: 'My clients' }, { value: 'all', label: 'All clients' }]} />
           )}
-          <label className="form-field form-field--grow">
-            <span className="form-field__label">Search</span>
-            <input type="search" placeholder="Client name" value={filters.q} onChange={set('q')} />
-          </label>
-          <label className="form-field">
-            <span className="form-field__label">Type</span>
-            <select value={filters.type} onChange={set('type')}>
-              <option value="">Any type</option>
-              {Object.entries(CLIENT_TYPES).map(([id, t]) => <option key={id} value={id}>{t.label}</option>)}
-            </select>
-          </label>
-          <label className="form-field">
-            <span className="form-field__label">Brand</span>
-            <select value={filters.brand} onChange={set('brand')}>
-              <option value="">Both brands</option>
-              {BRANDS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </label>
+          <SearchBox value={filters.q} onChange={setValue('q')} placeholder="Search clients" />
+          <FilterMenu label="Type" value={filters.type} anyLabel="Any type" onChange={setValue('type')}
+            options={Object.entries(CLIENT_TYPES).map(([id, t]) => ({ value: id, label: t.label }))} />
+          <FilterMenu label="Brand" value={filters.brand} anyLabel="Both brands" onChange={setValue('brand')}
+            options={BRANDS.map((b) => ({ value: b.id, label: b.name }))} />
           {view === 'all' && (
-            <label className="form-field">
-              <span className="form-field__label">Relationship owner</span>
-              <select value={filters.owner} onChange={set('owner')}>
-                <option value="">Anyone</option>
-                {bds.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </label>
+            <FilterMenu label="Owner" value={filters.owner} anyLabel="Anyone" onChange={setValue('owner')}
+              options={bds.map((u) => ({ value: u.id, label: u.name }))} />
           )}
-        </div>
-        <div className="result-count" role="status" aria-busy={isLoading}>
-          {error ? error.message : isLoading && !clients ? 'Loading…' : `${clients.length} ${clients.length === 1 ? 'client' : 'clients'}`}
-        </div>
+        </FilterBar>
         {clients && clients.length === 0 && !filtered && !isLoading ? (
           <div className="empty-line card-pad">
             <span>{view === 'mine' ? 'You have no clients yet.' : 'No clients yet.'}</span>
@@ -131,11 +124,12 @@ export default function ClientsPage() {
                 render: (c) => (
                   <span className="stack">
                     <span><Link to={clientLink(c.id)}>{c.name}</Link> <span className="id-chip">{c.id}</span></span>
-                    <span className="muted">{CLIENT_TYPES[c.type]?.label}{c.city ? ` · ${c.city}` : ''}</span>
+                    <span className="muted">{CLIENT_TYPES[c.type]?.label}{c.city ? ` · ${optionLabel(lists, 'cities', c.city)}` : ''}</span>
                   </span>
                 ),
               },
-              { key: 'brands', header: 'Brands', render: (c) => c.brands.map((b) => getBrand(b)?.name).join(' · ') },
+              { key: 'brands', header: 'Brands', render: (c) => (c.brands.length
+                ? <span className="brand-list">{c.brands.map((b) => <BrandTag key={b} brand={b} />)}</span> : <span className="muted">—</span>) },
               { key: 'owner', header: 'Relationship owner', nowrap: true, render: (c) => <Person user={usersById[c.owner]} /> },
               {
                 key: 'contact', header: 'Main contact',
@@ -152,7 +146,10 @@ export default function ClientsPage() {
       {creating && (
         <ClientForm
           onClose={() => setCreating(false)}
-          onSaved={(result, text) => navigate(clientLink(result.client.id), { state: { toast: text } })}
+          canPropose={createRequests.allowed}
+          onSaved={(result, text, { propose } = {}) => (propose
+            ? navigate(newRequestLink({ client: result.client.id }), { state: { flash: text } })
+            : navigate(clientLink(result.client.id), { state: { toast: text } }))}
         />
       )}
       <Toast message={toast.message} />

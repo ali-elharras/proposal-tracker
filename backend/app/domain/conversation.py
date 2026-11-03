@@ -9,7 +9,11 @@ from ..config_domain import ACCOUNT_MANAGER, COMMERCIAL_HEAD
 from .access import acts_as_business_development
 from .lists import check_codes
 from .request_form import normalize_request_fields, request_fields, validate_request_fields
+from .permissions import BD_OWNER, check_actors
 from .rules import status_cfg
+
+# Statuses where "Change needed" also moves the request (request_changes / resume + request_revision).
+CHANGE_MOVES_STATUS = ("ready_for_bd", "shared_with_client", "postponed")
 
 MESSAGE_KINDS = ("comment", "question", "answer", "answered", "change", "picked_up")
 CHANGE_ORIGINS = ("client", "internal")
@@ -54,8 +58,13 @@ def can_post_message(kind, r, viewer, users: dict) -> dict:
     if kind in (None, "comment"):
         return OK
     if kind == "change":
-        return OK if can_update_details(r, viewer, users)["allowed"] else _deny(
-            "Only the BD owner or the Commercial Head can ask for a change.")
+        if not can_update_details(r, viewer, users)["allowed"]:
+            return _deny("Only the BD owner or the Commercial Head can ask for a change.")
+        # Once the proposal is ready (or with the client), "Change needed" sends it back to the AM: a status step
+        # only the BD owner takes. Before that it is only a card the AM picks up, which the Head may post too.
+        if r.status in CHANGE_MOVES_STATUS and not check_actors([BD_OWNER], r, viewer, users)["allowed"]:
+            return _deny("Once the proposal is ready, only the BD owner can send it back for changes.")
+        return OK
     if kind == "picked_up":
         if _closed(r):
             return _deny("This request is closed.")
@@ -158,6 +167,9 @@ def can_update_details(r, viewer, users: dict) -> dict:
     return _deny("Only the BD owner or the Commercial Head can update the details.")
 
 
+EVENT_BEFORE_DEADLINE = "The event must start after the proposal deadline. Change the deadline too."
+
+
 def validate_details_update(r, data: dict, *, today: str, lists=None) -> dict:
     before = request_fields(r)
     picked = {k: v for k, v in data.items() if k in DETAIL_IDS}
@@ -167,7 +179,12 @@ def validate_details_update(r, data: dict, *, today: str, lists=None) -> dict:
     changes = [{"field": f["id"], "label": f["label"], "from": was.get(f["id"]), "to": values.get(f["id"])}
                for f in DETAIL_FIELDS if not same(was.get(f["id"]), values.get(f["id"]))]
     changed = {c["field"] for c in changes}
-    return {"errors": {k: v for k, v in errors.items() if k in changed}, "changes": changes, "values": values}
+    out = {k: v for k, v in errors.items() if k in changed}
+    # Only changed fields are checked (an old deadline may be in the past), but moving the event to on or before
+    # the unchanged proposal deadline is still refused: the deadline must stay before the event.
+    if changed & {"eventDate", "eventDatePrecision"} and "requiredBy" not in changed and "eventDate" not in out             and str(errors.get("requiredBy", "")).startswith("The proposal deadline must be before"):
+        out["eventDate"] = EVENT_BEFORE_DEADLINE
+    return {"errors": out, "changes": changes, "values": values}
 
 
 # ---------- why a version exists ----------

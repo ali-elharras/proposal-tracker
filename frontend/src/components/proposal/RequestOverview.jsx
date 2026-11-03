@@ -1,10 +1,10 @@
 import Card from '../ui/Card.jsx'
-import { useLists } from '../../data/hooks.js'
+import { useCurrentUser, useLists } from '../../data/hooks.js'
 import { optionLabel } from '../../domain/lists.js'
-import StatusBadge from '../ui/StatusBadge.jsx'
+import { Link } from 'react-router-dom'
 import Badge from '../ui/Badge.jsx'
 import { Person } from '../dashboard/cells.jsx'
-import { getBrand, serviceLabel } from '../../domain/brands.js'
+import { getBrand } from '../../domain/brands.js'
 import { CLIENT_TYPES } from '../../domain/catalog.js'
 import { ROLE, roleLabel } from '../../domain/roles.js'
 import { effectiveWaiting, waitingLabel } from '../../domain/waiting.js'
@@ -35,18 +35,13 @@ export default function RequestOverview({ request, client, usersById }) {
   const waiting = effectiveWaiting(request) // the one source of truth (a manual waiting-on wins)
   const samePerson = request.bdOwner === request.assignedAM
   const lists = useLists().data
+  const { pages } = useCurrentUser()
 
   return (
-    <Card title="Overview" subtitle={`${request.id} · Version ${request.version}`}>
+    <Card title="People and dates">
       <dl className="field-list">
-        <Field label="Request ID"><strong className="tabular">{request.id}</strong></Field>
-        <Field label="Status"><StatusBadge kind="proposal" status={request.status} version={request.version} /></Field>
         <Field label="Client" hint={client ? [CLIENT_TYPES[client.type]?.label, optionLabel(lists, 'cities', client.city)].filter(Boolean).join(' · ') : null}>
-          {client?.name ?? '—'}
-        </Field>
-        <Field label="Event name">{request.eventName ?? '—'}</Field>
-        <Field label="Brand · Service">
-          {getBrand(request.brand)?.name} · {serviceLabel(request.brand, request.service)}
+          {client && pages?.clients ? <Link to={`/clients/${encodeURIComponent(client.id)}`}>{client.name}</Link> : client?.name ?? '—'}
         </Field>
         <Field label="BD owner" hint={`Client relationship owner · does the BD steps${transfers.length ? ` · transferred from ${usersById[originalOwner]?.name ?? originalOwner}` : ''}`}>
           <Person user={bdOwner} suffix={roleLabel(ROLE.BUSINESS_DEVELOPMENT)} />

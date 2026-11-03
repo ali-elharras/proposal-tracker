@@ -17,6 +17,7 @@ import { todayISO } from '../../domain/metrics.js'
 import { PROPOSAL_STATUS as PS, getStatus } from '../../domain/status.js'
 import { effectiveWaiting, getTeam, waitingDays, waitingLabel } from '../../domain/waiting.js'
 import { EVENT_NAME_MAX } from '../../domain/workflow.js'
+import { eventLine, eventNote } from '../../domain/eventWords.js'
 import RelTime from '../ui/RelTime.jsx'
 
 const daysText = (n) => (n === null ? '' : n === 0 ? 'today' : n === 1 ? '1 day' : `${n} days`)
@@ -233,14 +234,9 @@ const STATUS_LINES = {
   [PS.CANCELLED]: 'cancelled the request',
 }
 const REASON_LISTS = { [PS.AWAITING_BD_INFO]: 'whatsMissing', [PS.REVISION_REQUESTED]: 'whatShouldChange', [PS.POSTPONED]: 'postponeWhy' }
-const EVENT_LINES = {
-  details_updated: 'updated the details', details_seen: 'saw the changed details', waiting_on_set: 'changed who it is waiting on',
-  waiting_on_cleared: 'marked it done', bd_owner_transferred: 'moved the BD owner', assigned_am_changed: 'moved it to another Account Manager',
-  client_merged: 'merged its client',
-}
 
 /** Status history, events and messages in one list, oldest first. */
-function threadItems(request, lists) {
+function threadItems(request, lists, usersById) {
   const history = request.statusHistory ?? request.history ?? []
   const items = history.map((e, i) => {
     let line = e.imported ? null : STATUS_LINES[e.status] ?? e.status
@@ -257,8 +253,8 @@ function threadItems(request, lists) {
   })
   for (const ev of request.events ?? []) {
     const changes = (ev.details?.changes ?? []).map((c) => `${c.label} ${show(c.from)} → ${show(c.to)}`).join(' · ')
-    items.push({ key: `e${ev.id}`, type: 'system', at: ev.changedAt, who: ev.changedBy, line: EVENT_LINES[ev.event] ?? ev.event,
-      detail: [changes, ev.note].filter(Boolean).join(' — ') })
+    items.push({ key: `e${ev.id}`, type: 'system', at: ev.changedAt, who: ev.changedBy, line: eventLine(ev, usersById),
+      detail: [changes, eventNote(ev)].filter(Boolean).join(' — ') })
   }
   for (const m of request.comments ?? []) items.push({ key: `m${m.id}`, type: 'message', at: m.createdAt, message: m })
   return items.sort((a, b) => String(a.at).localeCompare(String(b.at)))
@@ -359,12 +355,13 @@ export function Conversation({ request, lastReadAt }) {
   const [mode, setMode] = useState('comment') // 'change' shows what should change before sending
   const [text, setText] = useState('')
   const [about, setAbout] = useState('')
+  const [asQuestion, setAsQuestion] = useState(null) // null = suggested from the text (ends with "?"); true / false = chosen
   const [codes, setCodes] = useState([])
   const [origin, setOrigin] = useState('client')
   const [deadline, setDeadline] = useState('')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
-  const items = threadItems(request, lists).filter((it) => !(it.type === 'message' && openIds.has(it.message.id)))
+  const items = threadItems(request, lists, usersById).filter((it) => !(it.type === 'message' && openIds.has(it.message.id)))
   const isNew = (it) => (it.type === 'message' ? it.message.author : it.who) !== user.id && time(it.at) > time(lastReadAt)
   const listRef = useRef(null)
   const scrolled = useRef(false)
@@ -385,11 +382,14 @@ export function Conversation({ request, lastReadAt }) {
     setText('')
   }
 
+  const canAsk = canAskQuestion(request, viewer, usersById).allowed
+  const questionOn = asQuestion ?? text.trim().endsWith('?')
+
   async function send(e) {
     e.preventDefault()
     setError(null)
-    // A message with a "?" is a question (it shows as open until answered); nothing stops either way.
-    const asks = mode !== 'change' && text.includes('?') && canAskQuestion(request, viewer, usersById).allowed
+    // A question stays open until answered. Suggested when the message ends with "?", and always the sender's choice.
+    const asks = mode !== 'change' && questionOn && canAsk
     const message = mode === 'change'
       ? { kind: 'change', body: text, about: origin, reasons: codes, newRequiredBy: AFTER_SHARING.includes(request.status) ? deadline : undefined }
       : { kind: asks ? 'question' : 'comment', body: text, about: asks && about ? about : null }
@@ -401,6 +401,7 @@ export function Conversation({ request, lastReadAt }) {
     if (!result.ok) { setError(Object.values(result.errors ?? {})[0] ?? result.error); return }
     setText('')
     setAbout('')
+    setAsQuestion(null)
     setCodes([])
     setDeadline('')
     setMode('comment')
@@ -459,8 +460,15 @@ export function Conversation({ request, lastReadAt }) {
         ) : (
           <div className="composer__choices">
             <div className="composer__choice">
-              <button type="submit" className="btn btn--primary btn--sm" disabled={busy} aria-busy={busy}>{busy ? 'Sending…' : 'Send message'}</button>
-              <span className="composer__help">A note or a question; nothing stops.</span>
+              <button type="submit" className="btn btn--primary btn--sm" disabled={busy} aria-busy={busy}>
+                {busy ? 'Sending…' : questionOn && canAsk ? 'Ask question' : 'Send message'}
+              </button>
+              {canAsk && (
+                <label className="form-check composer__question">
+                  <input type="checkbox" checked={questionOn} onChange={(e) => setAsQuestion(e.target.checked)} />
+                  <span>It's a question (stays open until answered)</span>
+                </label>
+              )}
             </div>
             {canAskBd && (
               <div className="composer__choice">

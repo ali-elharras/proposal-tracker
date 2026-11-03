@@ -20,14 +20,17 @@ import OpportunityForm from '../components/crm/OpportunityForm.jsx'
 import TransferOwnerForm from '../components/crm/TransferOwnerForm.jsx'
 import { ClientHistoryList, brandService } from '../components/crm/HistoryList.jsx'
 import { successText } from '../components/crm/formParts.jsx'
-import { useAllRequests, useClient, useClientActions, useClientHistory, useLists, useLookups, useOpportunities, useRadar } from '../data/hooks.js'
+import { useAllRequests, useClient, useClientActions, useClientHistory, useCurrentUser, useLists, useLookups, useOpportunities, useRadar } from '../data/hooks.js'
 import { optionLabel } from '../domain/lists.js'
 import { getBrand, serviceLabel } from '../domain/brands.js'
 import { CLIENT_TYPES } from '../domain/catalog.js'
 import { isActiveOpportunity } from '../domain/metrics.js'
 import { EVENT_TIMING_LABELS, cairoTodayISO, clientEvents } from '../domain/events.js'
 import { formatCurrency, formatEventDate } from '../lib/format.js'
-import { opportunityLink, proposalLink } from '../lib/links.js'
+import { newRequestLink, opportunityLink, proposalLink } from '../lib/links.js'
+import Icon from '../components/ui/Icon.jsx'
+import BrandTag from '../components/ui/BrandTag.jsx'
+import { ROLE } from '../domain/roles.js'
 
 const TAB_IDS = ['overview', 'contacts', 'events', 'history']
 const NONE = { allowed: false, reason: null }
@@ -45,6 +48,7 @@ export default function ClientDetailPage() {
   const { data: client, isLoading, error, notFound, reload } = useClient(id)
   const history = useClientHistory(client ? id : null)
   const { usersById } = useLookups()
+  const { pages, user, activeRole, createRequests } = useCurrentUser()
   const opportunities = useOpportunities()
   const requests = useAllRequests() // only what this viewer may see (never someone else's draft)
   const actions = useClientActions(client)
@@ -102,10 +106,16 @@ export default function ClientDetailPage() {
     ...(can.transfer.allowed ? [{ label: 'Transfer owner', onSelect: () => setPanel({ kind: 'transfer' }) }] : []),
     ...(can.archive.allowed ? [{ label: 'Archive client', tone: 'danger', onSelect: () => { setArchiveError(null); setArchiving(true) } }] : []),
   ]
-  const headerActions = can.edit.allowed || more.length ? (
+  // One click to a request for this client, already chosen (the server checks again who may).
+  const canRequest = createRequests.allowed && !client.archivedAt && (activeRole === ROLE.COMMERCIAL_HEAD || client.owner === user.id)
+  const newProposal = canRequest && (
+    <Link to={newRequestLink({ client: client.id })} className="btn btn--primary"><Icon name="plus" size={16} strokeWidth={2} /> New proposal</Link>
+  )
+  const headerActions = can.edit.allowed || more.length || canRequest ? (
     <>
       <MoreMenu items={more} />
-      {can.edit.allowed && <button type="button" className="btn btn--primary" onClick={() => setPanel({ kind: 'edit' })}>Edit</button>}
+      {can.edit.allowed && <button type="button" className={canRequest ? 'btn' : 'btn btn--primary'} onClick={() => setPanel({ kind: 'edit' })}>Edit</button>}
+      {newProposal}
     </>
   ) : (
     <span className="muted">{client.archivedAt ? 'This client is archived.' : `Owned by ${owner?.name ?? client.owner}`}</span>
@@ -119,7 +129,7 @@ export default function ClientDetailPage() {
   const oppColumns = [
     {
       key: 'service', header: 'Opportunity',
-      render: (o) => <span><Link to={opportunityLink(o.id)}>{brandService(o)}</Link> <span className="id-chip">{o.id}</span></span>,
+      render: (o) => <span>{pages?.opportunities ? <Link to={opportunityLink(o.id)}>{brandService(o)}</Link> : brandService(o)} <span className="id-chip">{o.id}</span></span>,
     },
     { key: 'stage', header: 'Stage', nowrap: true, render: (o) => <StatusBadge kind="opportunity" status={o.stage} /> },
     { key: 'value', header: 'Est. value', align: 'end', nowrap: true, render: (o) => <span className="tabular">{formatCurrency(o.estimatedValue)}</span> },
@@ -128,21 +138,15 @@ export default function ClientDetailPage() {
 
   return (
     <PageLayout title={client.name} subtitle={`${CLIENT_TYPES[client.type]?.label ?? client.type}${client.city ? ` · ${optionLabel(lists, 'cities', client.city)}` : ''}`}
-      actions={headerActions}>
-      <nav className="breadcrumb" aria-label="Breadcrumb">
-        <Link to="/clients">Clients</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{client.name}</span>
-      </nav>
+      actions={headerActions} crumbs={[{ label: 'Clients', to: '/clients' }, { label: client.id }]}>
       <LinkedTodos kind="client" id={client.id} />
       {(radar.data?.items ?? []).filter((i) => i.clientId === client.id).map((i) => (
         <p key={i.signal} className="radar-line">Likely to book soon: {i.sentence}{' '}
           <Link to={fromPreviousLink(i)}>Create request from previous</Link></p>
       ))}
       <div className="profile-meta">
-        <span>{client.brands.map((b) => getBrand(b)?.name).join(' · ')}</span>
+        {client.brands.length > 0 && <span className="brand-list">{client.brands.map((b) => <BrandTag key={b} brand={b} />)}</span>}
         <Person user={owner} suffix="Relationship owner" />
-        <span className="id-chip">{client.id}</span>
         {client.archivedAt && <Badge tone="neutral">Archived</Badge>}
       </div>
 
@@ -160,7 +164,7 @@ export default function ClientDetailPage() {
               {openOpps.length === 0 && !opportunities.isLoading ? (
                 <div className="empty-line card-pad"><span>No open opportunities.</span>{addOpportunity}</div>
               ) : (
-                <DataTable caption="Open opportunities" rows={openOpps} rowKey={(o) => o.id} rowHref={(o) => opportunityLink(o.id)}
+                <DataTable caption="Open opportunities" rows={openOpps} rowKey={(o) => o.id} rowHref={pages?.opportunities ? (o) => opportunityLink(o.id) : undefined}
                   emptyMessage="Loading…" columns={oppColumns} />
               )}
             </Card>

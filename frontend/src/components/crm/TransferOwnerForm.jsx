@@ -4,7 +4,7 @@ import ConfirmDialog from '../ui/ConfirmDialog.jsx'
 import { Field, FormAlert, PanelButtons, successText, usePanelForm } from './formParts.jsx'
 import { useClientActions, useLookups, useUsers } from '../../data/hooks.js'
 import { validateTransfer } from '../../domain/crm.js'
-import { ROLE } from '../../domain/roles.js'
+import { canOwnClients } from '../../domain/access.js'
 
 const FORM_ID = 'transfer-form'
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
@@ -21,7 +21,7 @@ export default function TransferOwnerForm({ client, onClose, onSaved, onReload }
   const [confirming, setConfirming] = useState(false)
   const form = usePanelForm({ toOwner: '', reason: '', moveRequests: true })
   const { values, set, errors, setErrors, failure, busy, submit, fieldProps } = form
-  const bds = users.filter((u) => u.roles.includes(ROLE.BUSINESS_DEVELOPMENT) && u.id !== client.owner)
+  const bds = users.filter((u) => canOwnClients(u) && u.id !== client.owner) // BD role or "Brings in clients"
   const preview = client.transferPreview ?? { openOpportunityCount: 0, openRequestCount: 0 }
   const newOwner = usersById[values.toOwner]
   const from = usersById[client.owner]?.name ?? client.owner

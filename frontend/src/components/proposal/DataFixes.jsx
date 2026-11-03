@@ -10,6 +10,7 @@ import {
 } from '../../domain/corrections.js'
 import { cairoTodayISO } from '../../domain/events.js'
 import { ROLE } from '../../domain/roles.js'
+import { actsAsBusinessDevelopment } from '../../domain/access.js'
 import { resolveAssignedAM } from '../../domain/routing.js'
 import { LOST_REASONS_FOR_FORMS } from '../../domain/status.js'
 import { proposalLink } from '../../lib/links.js'
@@ -105,11 +106,13 @@ export function PastRecordPanel({ onClose }) {
   const routing = useConfig().data?.routing
   const today = cairoTodayISO()
   const isAM = activeRole === ROLE.ACCOUNT_MANAGER
+  // Acting as BD (the BD role, or "Brings in clients" like Doaa): own clients only, and they are the BD owner.
+  const ownClientsOnly = activeRole !== ROLE.COMMERCIAL_HEAD && actsAsBusinessDevelopment({ userId: user.id, activeRole }, user)
   const firstBrand = isAM && user.brand ? user.brand : ''
   const amFor = (brand) => { try { return brand ? resolveAssignedAM(brand, routing) : '' } catch { return '' } }
   const form = usePanelForm({
     clientId: '', newClientName: '', newClientType: '', eventName: '', brand: firstBrand, service: '',
-    bdOwner: activeRole === ROLE.BUSINESS_DEVELOPMENT ? user.id : '', assignedAM: amFor(firstBrand),
+    bdOwner: ownClientsOnly ? user.id : '', assignedAM: amFor(firstBrand),
     briefDate: '', sentDate: '', eventDate: '', eventEndDate: '', participants: '', outcome: '', amPrice: '', finalPrice: '',
     lostReason: '', notes: '', confirmDuplicate: false,
   })
@@ -119,9 +122,15 @@ export function PastRecordPanel({ onClose }) {
   const brand = getBrand(values.brand)
   const bds = users.filter((u) => u.active !== false && (u.roles.includes(ROLE.BUSINESS_DEVELOPMENT) || u.privileges?.bringsInClients))
   const ams = users.filter((u) => u.active !== false && u.roles.includes(ROLE.ACCOUNT_MANAGER))
-  const mine = activeRole === ROLE.BUSINESS_DEVELOPMENT ? clients.filter((c) => c.owner === user.id) : clients
+  const mine = ownClientsOnly ? clients.filter((c) => c.owner === user.id) : clients
   const confirmed = ['confirmed', 'done'].includes(values.outcome)
   const duplicate = failure?.code === 'possible_duplicate'
+  // Choosing a client fills its BD owner (the relationship owner) when that person can own clients.
+  const setClient = (e) => {
+    set('clientId')(e)
+    const owner = clients.find((c) => c.id === e.target.value)?.owner
+    if (!ownClientsOnly && owner && bds.some((u) => u.id === owner)) set('bdOwner')({ target: { value: owner } })
+  }
   const setBrand = (e) => {
     set('brand')(e)
     set('service')('')
@@ -162,7 +171,7 @@ export function PastRecordPanel({ onClose }) {
         )}
         {fileError && <p className="form-error" role="alert">{fileError}</p>}
         <Field id="pr-client" label="Client" required error={errors.clientId}>
-          <select {...fieldProps('pr-client', 'clientId')} value={values.clientId} onChange={set('clientId')}>
+          <select {...fieldProps('pr-client', 'clientId')} value={values.clientId} onChange={setClient}>
             <option value="">{values.newClientName ? 'New client (below)' : 'Choose…'}</option>
             {[...mine].sort((a, b) => a.name.localeCompare(b.name)).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>

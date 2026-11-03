@@ -99,6 +99,7 @@ export default function PersonPage() {
     <PageLayout
       title={person.name}
       subtitle={person.jobTitle ?? 'No job title'}
+      crumbs={[{ label: 'Team & Users', to: '/team' }, { label: person.name }]}
       actions={can.edit.allowed ? (
         <>
           <MoreMenu items={more} />
@@ -106,11 +107,6 @@ export default function PersonPage() {
         </>
       ) : null}
     >
-      <nav className="breadcrumb" aria-label="Breadcrumb">
-        <Link to="/team">Team &amp; Users</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{person.name}</span>
-      </nav>
       <div className="profile-meta">
         <span>{person.roles.map((r) => roleLabel(r, person)).join(' · ')}</span>
         <a href={`mailto:${person.email}`}>{person.email}</a>

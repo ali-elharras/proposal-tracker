@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import Icon from '../ui/Icon.jsx'
 import CountUp from '../ui/CountUp.jsx'
+import { NO_PRICES } from '../../lib/format.js'
 
 /**
  * delta: { text, direction: 'up' | 'down', good: boolean } (optional)
@@ -16,7 +17,10 @@ export default function KpiCard({ label, value, icon, tone = 'default', delta, n
           <Icon name={icon} size={16} strokeWidth={2} />
         </span>
       </div>
-      <div className="kpi-card__value"><CountUp value={value} id={label} /></div>
+      {/* A total with no prices behind it is a quiet line, not a giant number. */}
+      {value === NO_PRICES
+        ? <div className="kpi-card__value kpi-card__value--empty">{NO_PRICES}</div>
+        : <div className="kpi-card__value"><CountUp value={value} id={label} /></div>}
       {(delta || note) && (
         <div className="kpi-card__foot">
           {delta && (

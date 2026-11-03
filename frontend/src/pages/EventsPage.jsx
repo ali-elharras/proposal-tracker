@@ -8,6 +8,7 @@ import { usePageDescription } from './PlaceholderPage.jsx'
 import { useCurrentUser, useEvents, useLists } from '../data/hooks.js'
 import { findNavItem } from '../navigation.js'
 import Tabs from '../components/ui/Tabs.jsx'
+import { FilterBar, FilterMenu } from '../components/ui/Filters.jsx'
 import useTab from '../lib/useTab.js'
 import { ROLE } from '../domain/roles.js'
 import { BRANDS, getBrand } from '../domain/brands.js'
@@ -37,6 +38,10 @@ const TABS_FOR = {
   [ROLE.HR]: ['confirmed', 'initial', 'calendar', 'done'], // HR: initially confirmed, confirmed and done only
 }
 const DEFAULT_TABS = ['week', 'confirmed', 'initial', 'calendar', 'done', 'off']
+const EMPTY_TEXT = {
+  week: 'No events this week.', confirmed: 'No confirmed events coming up.', initial: 'No initially confirmed events.',
+  done: 'No events done yet.', off: 'Nothing postponed or cancelled.', pipeline: 'No proposals coming up.',
+}
 
 /**
  * Events: only what the client agreed to. Tabs (counts on each; in the URL): This week · Upcoming (confirmed) ·
@@ -47,7 +52,7 @@ export default function EventsPage() {
   const [params, setParams] = useSearchParams()
   const { activeRole } = useCurrentUser()
   const tabs = EVENT_TABS.filter((t) => (TABS_FOR[activeRole] ?? DEFAULT_TABS).includes(t.id))
-  const [section, setSection] = useTab(tabs.map((t) => t.id))
+  const [chosen] = useTab(tabs.map((t) => t.id))
   const { data, isLoading, error } = useEvents()
   const lists = useLists().data
   const nav = findNavItem('/events')
@@ -67,6 +72,16 @@ export default function EventsPage() {
   const [pastOpen, setPastOpen] = useState(() => params.get('past') === '1')
   const pastAllowed = usePastRecordAllowed()
   const sections = operationsSections(data?.items ?? [], data?.pipeline ?? [], { brand, period }, today)
+  const countOf = (id) => (id === 'done' ? sections.doneTotal : sections[id]?.length ?? 0)
+  // Opened without a tab: start on the first tab that has events (not an empty "This week" when there are
+  // upcoming ones). A tab someone clicks is always kept in the URL, so it stays as chosen.
+  const section = params.get('tab') || !data || countOf(chosen) > 0
+    ? chosen : tabs.find((t) => t.id !== 'calendar' && countOf(t.id) > 0)?.id ?? chosen
+  const setSection = (id) => {
+    const next = new URLSearchParams(params)
+    next.set('tab', id)
+    setParams(next, { replace: true })
+  }
   const fresh = new Set(data?.newIds ?? [])
   const rows = section === 'done' ? (all ? sections.doneAll : sections.done) : sections[section] ?? []
   const counts = { ...Object.fromEntries(tabs.map((t) => [t.id, sections[t.id]?.length])), done: sections.doneTotal, calendar: undefined }
@@ -78,23 +93,16 @@ export default function EventsPage() {
       {pastOpen && <PastRecordPanel onClose={() => setPastOpen(false)} />}
       <Tabs label="Events" value={section} onChange={setSection}
         tabs={tabs.map((t) => ({ ...t, count: data ? counts[t.id] : undefined }))} />
-      <div className="page-toolbar ops-toolbar">
-        <label className="form-field">
-          <span className="form-field__label">Brand</span>
-          <select value={brand} onChange={(e) => update('brand', e.target.value, '')}>
-            <option value="">Both brands</option>
-            {BRANDS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        </label>
+      <FilterBar active={[brand, period !== 'all' && section !== 'calendar'].filter(Boolean).length}
+        onClear={() => { const next = new URLSearchParams(params); next.delete('brand'); next.delete('period'); setParams(next, { replace: true }) }}
+        count={data && section !== 'calendar' ? `${rows.length} ${rows.length === 1 ? 'event' : 'events'}` : null}>
+        <FilterMenu label="Brand" value={brand} anyLabel="Both brands" onChange={(v) => update('brand', v, '')}
+          options={BRANDS.map((b) => ({ value: b.id, label: b.name }))} />
         {section !== 'calendar' && (
-          <label className="form-field">
-            <span className="form-field__label">Period</span>
-            <select value={period} onChange={(e) => update('period', e.target.value, 'all')}>
-              {EVENT_PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
-          </label>
+          <FilterMenu label="When" value={period === 'all' ? '' : period} anyLabel="Any time" onChange={(v) => update('period', v || 'all', 'all')}
+            options={EVENT_PERIODS.filter((p) => p.id !== 'all').map((p) => ({ value: p.id, label: p.label }))} />
         )}
-      </div>
+      </FilterBar>
       {error && <p className="quiet-line" role="status">{error.message}</p>}
       {isLoading && !data && !error && <SkeletonList />}
       {data && section === 'calendar' && (
@@ -114,7 +122,8 @@ export default function EventsPage() {
             rowHref={section === 'pipeline' ? undefined : (e) => `/events/${encodeURIComponent(e.request.id)}`}
             rowPeek={section === 'pipeline' ? undefined : (e) => peekToken('event', e.request.id)}
             rowBrand={(e) => e.request.brand}
-            columns={columnsFor(section, { lists, fresh })} emptyMessage="Nothing here." />
+            columns={columnsFor(section, { lists, fresh })}
+            emptyMessage={EMPTY_TEXT[section] ?? 'No events here.'} />
         </Card>
       )}
     </PageLayout>

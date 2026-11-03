@@ -11,9 +11,10 @@ import './styles/layout.css'
 import './styles/components.css'
 import './styles/dashboard.css'
 import './styles/polish.css'
+import './styles/v2.css'
 
-// API mode: requests, the tracker and the form use the backend. The demo store stays mounted
-// only for the dashboards, which keep demo figures until the next phase.
+// API mode: everything comes from the backend (ApiProvider). The in-memory demo store stays mounted
+// underneath for demo mode (VITE_DATA_SOURCE=demo), where it is the data source.
 const app = (
   <DemoStoreProvider>
     <BrowserRouter>

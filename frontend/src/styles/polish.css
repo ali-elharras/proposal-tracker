@@ -6,14 +6,7 @@
   --brand-grasshoppers: #3d8b1f;
   --brand-teamup: #6d4bc4;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --brand-grasshoppers: #7cc35a;
-    --brand-teamup: #a68cf0;
-  }
-}
-:root[data-theme='dark'],
-.screen[data-theme='dark'] {
+:root[data-theme='dark'] {
   --brand-grasshoppers: #7cc35a;
   --brand-teamup: #a68cf0;
 }
@@ -40,7 +33,6 @@
 .data-table tr.brand-edge td:first-child { box-shadow: inset 3px 0 0 var(--brand-color); }
 .queue-card.brand-edge,
 .cal__event.brand-edge { border-inline-start: 3px solid var(--brand-color); }
-.screen__list li.screen__brand-edge { box-shadow: inset 0.25em 0 0 var(--brand-color); padding-inline-start: 0.8em; }
 
 /* ---------- Quick peek ---------- */
 .side-panel--peek { inline-size: min(560px, 100vw); }
@@ -233,46 +225,6 @@
   .celebrate__burst i,
   .skeleton__bar { animation: none; }
   .celebrate__burst { display: none; }
-}
-
-/* ---------- Title Case: every word of a heading, title or label starts with a capital ----------
-   ("Event owner" -> "Event Owner"). Display only: the words stored and searched stay as written, and
-   letters already capital (BD, AM, IEE, IDs) are never lowered. Sentences, messages and buttons keep
-   their own case. */
-h1, h2, h3, h4,
-.page-header__title,
-.header__title,
-.card__title,
-.side-panel__title,
-.confirm-dialog__title,
-.popover__title,
-.empty-state__title,
-.action-form__title,
-.section-label,
-.table-group-title,
-.tracker-group__title,
-.queue-column__title,
-.board__title,
-.data-table th,
-dt,
-legend,
-.form-field__label,
-.tabs__tab,
-.tracker-tab,
-.segmented__option,
-.sidebar__label,
-.sidebar__section-label,
-.sidebar__group-label,
-.kpi-card__label,
-.funnel__label,
-.progress__label,
-.proposal-current__label,
-.mini-bars__label,
-.cal__strip-label,
-.command__group,
-.viewer-menu__title,
-.viewer-menu__label {
-  text-transform: capitalize;
 }
 
 /* ---------- My to-dos ---------- */

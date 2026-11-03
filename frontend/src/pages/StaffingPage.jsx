@@ -31,7 +31,8 @@ function periodOf(e, today) {
   return 'later'
 }
 
-const line = (t) => `${t.events} events · ${t.needed} facilitators needed · ${t.assigned} assigned · ${t.missing} missing`
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+const line = (t) => `${plural(t.events, 'event', 'events')} · ${plural(t.needed, 'facilitator', 'facilitators')} needed · ${t.assigned} assigned · ${t.missing} missing`
 
 /**
  * Staffing (HR's first page): initially confirmed and confirmed events still to come, by period, each with
@@ -134,8 +135,10 @@ function Ratios({ ratios, setRatio }) {
   const [message, setMessage] = useState(null)
   const save = async (brand, service) => {
     const key = `${brand}:${service}`
-    const raw = draft[key]
-    const result = await setRatio(brand, service, raw === '' || raw === undefined ? null : Number(raw))
+    const raw = String(draft[key] ?? '').trim()
+    if (raw !== '' && !/^[1-9]\d*$/.test(raw)) { setMessage('Enter a whole number of participants (1 or more), or leave it empty.'); return }
+    const result = await setRatio(brand, service, raw === '' ? null : Number(raw))
+    if (result.ok) setDraft((d) => { const next = { ...d }; delete next[key]; return next })
     setMessage(result.ok ? 'Saved.' : Object.values(result.errors ?? {})[0] ?? result.error)
   }
   return (
