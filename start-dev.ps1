@@ -79,8 +79,12 @@ try {
             if ($LASTEXITCODE -ne 0) { throw 'reset-demo failed.' }
         } else {
             Write-Host '    Demo data (first run only; later runs keep your changes)...'
+            # Both refuse harmlessly on later runs. Windows PowerShell turns their message on stderr into a
+            # terminating error under 'Stop', so these two run with 'Continue' (a real failure still shows).
+            $ErrorActionPreference = 'Continue'
             & $python -m app.seed mark-demo 2>&1 | Out-Host   # refuses harmlessly if already marked
             & $python -m app.seed demo 2>&1 | Out-Host        # refuses harmlessly if data is already there
+            $ErrorActionPreference = 'Stop'
         }
     }
 } finally {

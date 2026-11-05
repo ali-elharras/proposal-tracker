@@ -179,3 +179,72 @@ def test_setup_real_is_idempotent_and_refuses_a_demo_database(tmp_path, real_db,
     from app.seed.guards import SeedRefused
     with pytest.raises(SeedRefused, match="data_kind='demo'"):
         setup_real(db_url, now=NOW)
+
+
+# ---------------------------------------------------------------------------
+# An earlier year's sheet (2025): title and colour legend above the header, "Person in Charge", no Status
+# column (the row's colour is the status), Grip 'N Climb rows; imported together with the 2026 sheet.
+# ---------------------------------------------------------------------------
+
+HEADER_2025 = ["Person in Charge", "#", "Brief Date", "Client", "Brief Details", "IEE Brand", "Propsal send to BD Date",
+               "Finacial Propsal Date", "Deadline", "Sent to Client", "Expected Operation Date", "Actual Operation Date",
+               "Feedback", "Comment"]
+DONE, CANCELLED, POSTPONED = "FF00FFFF", "FFFF0000", "FFFF9900"
+ROWS_2025 = [  # person, #, brief, client, details, brand, financial proposal date, colour
+    ("Noha", 1, date(2025, 3, 2), "Acme Co", "Team Building Event", "Team Up", date(2025, 3, 5), DONE),
+    ("Toqa", 2, date(2025, 4, 6), "Wycombe Abbey", "Sports Day", "GNC & TGH", None, CANCELLED),
+    ("Shams", 3, date(2025, 5, 7), "Palm Hills", "Climbing", "Grip 'N Climb", None, DONE),
+    ("", 4, date(2025, 6, 8), "Zen Resort", "Family Day", "Team Up", None, POSTPONED),
+]
+
+
+def workbook_two_years(path):
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill
+    wb = Workbook()
+    old = wb.active
+    old.title = "2025"
+    old.append([None, "Proposal Tracker"])
+    old.append([None, None, None, None, None, "Done", "Confirmed", "Pending", "Postponed", "Cancelled"])
+    old.append(HEADER_2025)
+    for person, n, brief, client, details, brand, financial, colour in ROWS_2025:
+        old.append([person, n, brief, client, details, brand, None, financial, None, None, None, None, None, None])
+        for cell in old[old.max_row]:
+            cell.fill = PatternFill("solid", fgColor=colour)
+    new = wb.create_sheet("2026")
+    new.append(HEADER)
+    for r in ROWS:
+        new.append([*r[:10], None, None, r[10], None])
+    wb.save(path)
+    return str(path)
+
+
+def test_an_earlier_year_is_closed_history_and_years_never_clash(tmp_path, real_db):
+    path = workbook_two_years(tmp_path / "t.xlsx")
+    text = run(path, database_url=real_db, apply=True, now=NOW, sheet="2025,2026")
+    assert "2025 row #3: Palm Hills (GRIP 'N CLIMB is not one of our brands)" in text
+    assert "NEW inactive account: Toqa (Former team member)" in text
+    engine = make_engine(real_db)
+    with make_sessionmaker(engine)() as db:
+        rows = {r.import_row: r for r in db.scalars(select(ProposalRequest)).all()}
+        assert {2025001, 2025002, 2025004} <= set(rows) and 1 in rows, "2025 keys never clash with 2026 numbers"
+        done, cancelled, postponed = rows[2025001], rows[2025002], rows[2025004]
+        assert (done.status, done.original_status, done.id[:7]) == ("accepted", "Event Completed", "PR-2025")
+        assert (cancelled.status, cancelled.brand) == ("rejected", "grasshoppers"), "GNC & TGH: Grasshoppers only"
+        assert postponed.status == "closed_postponed" and postponed.follow_up_on is None, "closed, not a live follow-up"
+        assert postponed.bd_owner_id == "u-noha", "nobody in charge: the Commercial Head"
+        assert done.client_id == rows[1].client_id, "the same client in both years is one client"
+        notes = [h.note for h in sorted(done.history, key=lambda h: h.seq)]
+        assert notes[0] == "From the 2025 tracker (row #1)"
+    engine.dispose()
+    again = run(path, database_url=real_db, apply=True, now=NOW, sheet="2025,2026")
+    assert "APPLIED: 0 requests, 0 clients" in again, "repeatable across both years"
+
+
+def test_old_pending_briefs_close_as_cancelled_only_when_asked(tmp_path, real_db):
+    path = workbook(tmp_path / "t.xlsx")
+    plain = run(path, database_url=real_db, now=NOW)
+    assert "closed as cancelled" not in plain, "off by default"
+    text = run(path, database_url=real_db, now=NOW, stale_days=60)
+    assert "Pending for a long time, closed as cancelled (2):" in text
+    assert "Pending                    -> Shared with Client" not in text

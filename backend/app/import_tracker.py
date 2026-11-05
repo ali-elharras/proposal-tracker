@@ -1,10 +1,17 @@
 """
-Imports the 2026 Proposal Tracker spreadsheet into the REAL database.
+Imports the Proposal Tracker spreadsheet (the 2026 sheet, and earlier years' sheets) into the REAL database.
 
-    python -m app.import_tracker <file.xlsx>            dry run: prints what it would create, skip and merge
-    python -m app.import_tracker <file.xlsx> --apply    does it, in one transaction (all or nothing)
+    python -m app.import_tracker <file.xlsx>                         dry run: prints what it would create, skip and merge
+    python -m app.import_tracker <file.xlsx> --apply                 does it, in one transaction (all or nothing)
+    python -m app.import_tracker <file.xlsx> --sheet 2025,2026       several sheets in one run (clients shared)
 
-Options: --sheet (default "Sheet1"), --as <user id> (who runs the import; default u-noha).
+Options: --sheet (default "Sheet1"; a comma list for several), --as <user id> (who runs the import; default u-noha).
+
+Earlier years (a sheet named for a year before 2026, e.g. "2025") are history: every row is closed. Their
+layout may differ: the header row is found by its "#" column, "Person in Charge" is the BD who brought the
+brief, and when there is no Status column the status is the row's colour (the sheet's legend: Done, Confirmed,
+Pending, Postponed, Cancelled). A 2025 row keeps its own key (2025 * 1000 + its "#"), so years never clash.
+With --close-pending-older-than N, a 2026 "Pending" brief older than N days is closed as lost (never answered).
 
 Repeatable: every request keeps the sheet's "#" (import_row, unique), so a second run creates
 nothing it created before. Clients are matched by name ignoring case, spaces and punctuation.
@@ -45,13 +52,20 @@ from .setup_real import real_database_url
 CAIRO = ZoneInfo("Africa/Cairo")
 SHEET = "Sheet1"
 IMPORT_NOTE = "From the 2026 tracker (row #{n})"
+YEAR_NOTE = "From the {year} tracker (row #{n})"
+LIVE_YEAR = 2026  # the live tracker; earlier sheets are closed history
+PENDING_STALE_DAYS = None  # --close-pending-older-than N: a 2026 "Pending" brief older than N days is closed as lost
 FORMER = "Former team member"
 
 # "Brief Sent by" -> account. Anyone else becomes an INACTIVE account ("Former team member").
 SENDERS = {"noha": "u-noha", "doaa": "u-doaa", "seif": "u-ahmed", "shams": "u-abdelrahman",
            "sherine": "u-sherine", "mariam": "u-mariam-elkhayat"}
-BRAND_CODES = {"tgh": "grasshoppers", "team-up": "teamup", "teamup": "teamup"}
-SKIPPED_BRANDS = {"gnc"}
+BRAND_CODES = {"tgh": "grasshoppers", "team-up": "teamup", "teamup": "teamup", "team up": "teamup",
+               # Grip 'N Climb is another company's brand: a row shared with TGH is imported as Grasshoppers only.
+               "gnc & tgh": "grasshoppers", "tgh, gnc & tgh": "grasshoppers", "tgh & gnc": "grasshoppers",
+               "team up, tgh": "teamup"}
+SKIPPED_BRANDS = {"gnc", "grip 'n climb", "grip n climb"}
+BLANK_SENDER = "noha"  # a row with nobody in charge belongs to the Commercial Head
 BRAND_NAMES = {b["id"]: b["name"] for b in BRANDS}
 SERVICE_LABELS = {(b["id"], s["id"]): s["label"] for b in BRANDS for s in b["services"]}
 
@@ -71,7 +85,23 @@ STATUS = {
     "pending": ("shared_with_client", "negotiation"),
 }
 STATUS_LABELS = {"accepted": "Confirmed", "rejected": "Lost", "postponed": "Postponed", "in_progress": "In Progress",
-                 "shared_with_client": "Shared with Client"}
+                 "shared_with_client": "Shared with Client", "closed_postponed": "Closed · postponed"}
+
+# An earlier year's sheet (closed history): its status -> (request status, opportunity stage). Done is the
+# event done ("Event Completed"); Postponed was never followed up, so it is closed, not a live follow-up.
+PAST_STATUS = {
+    "done": ("accepted", "won"),
+    "confirmed": ("accepted", "won"),
+    "event completed": ("accepted", "won"),
+    "approved": ("accepted", "won"),
+    "cancelled": ("rejected", "lost"),
+    "canceled": ("rejected", "lost"),
+    "pending": ("rejected", "lost"),
+    "postponed": ("closed_postponed", "closed_no_result"),
+}
+# The sheets' colour legend (when a sheet has no Status column): fill colour -> status.
+FILL_STATUS = {"FF00FFFF": "Done", "FF00FF00": "Confirmed", "FFFFFF00": "Pending", "FFFF9900": "Postponed",
+               "FFFF0000": "Cancelled"}
 FOLLOW_UP_DAYS = 7
 
 MONTHS = {m: i for i, m in enumerate(
@@ -88,14 +118,22 @@ MERGES = {
     # the Ramadan Riders Football Tournament rows (10-12); their event name is the sheet's whole client text.
     "Talabat": lambda t: (t == "talabat" or t.startswith("talabat ") or t in RAMADAN_IFTAR
                           or t.startswith("ramadan riders football tournament")),
-    "Fade": lambda t: t in ("fade", "fade easter", "fade eid fitr", "fade summer season"),
+    "Fade": lambda t: t in ("fade", "fade easter", "fade eid fitr", "fade summer season", "fade activation", "etisal (fade)"),
     "Mountain View": lambda t: t in ("mountain view", "mountain view icity"),
-    "Capgemini": lambda t: t in ("capgemini", "capgemini architect summit"),
+    "Capgemini": lambda t: t in ("capgemini", "capgemini architect summit", "capgemini social wellbeing"),
     "Sodic": lambda t: t in ("sodic", "june by sodic"),
     "Azha": lambda t: t in ("azha", "teb (azha)"),
+    # Merged when the 2025 and 2026 sheets were imported together (approved by the user, Nov 2026).
+    "Cadmus": lambda t: t in ("cadmus", "cadmus el borouj", "cadmus school activation", "cadmus team building"),
+    "Sinai Cement": lambda t: t in ("sinai cement", "sinai cement cairo", "sinai cement el 3areesh"),
+    "Siemens Healthineers": lambda t: t == "siemens healthineers" or t.startswith("siemens healthineers -"),
+    "Wadi Degla": lambda t: t in ("wadi degla", "wadi degla easter", "wadi degla sahel season"),
+    "Instashop": lambda t: t in ("instashop", "instashop sports day"),  # "Instashop / Talabat" stays its own client
+    "Misr American College": lambda t: t in ("misr american", "misr american college"),
+    "Makadi Heights": lambda t: t in ("makadi heights", "shift experience (makadi heights)"),
 }
 # Event names that are not "the client text without the client's name" (lower-case sheet text -> name).
-MERGED_EVENT_NAMES = {"teb (azha)": "TEB"}
+MERGED_EVENT_NAMES = {"teb (azha)": "TEB", "misr american": "", "misr american college": ""}  # "": the brief text
 # Client names cleaned on Noha's instruction (sheet text -> name).
 CLIENT_FIXES = {'General Motors (GM) "GlobalStars Agency': "General Motors (GM) – GlobalStars Agency"}
 
@@ -151,6 +189,9 @@ COLUMNS = {  # header text (lower case) -> field
     "brief details": "brief", "iee brand": "brand", "deadline": "deadline",
     "propsal send to bd date": "proposal_date", "proposal send to bd date": "proposal_date",
     "expected operation date": "expected", "actual operation date": "actual", "status": "status",
+    # earlier years' layout
+    "person in charge": "sender", "finacial propsal date": "financial_date", "financial proposal date": "financial_date",
+    "sent to client": "sent_date",
 }
 
 
@@ -175,6 +216,12 @@ class Row:
     expected: object
     actual: object
     status: str
+    year: int = LIVE_YEAR  # the sheet's year (an earlier year is closed history)
+    key: int = 0  # import_row: the "#" for the live year, year * 1000 + "#" for an earlier one
+
+    @property
+    def label(self) -> str:
+        return f"#{self.number}" if self.year == LIVE_YEAR else f"{self.year} #{self.number}"
 
 
 def _excel_date(value) -> date | None:
@@ -192,40 +239,62 @@ def _excel_date(value) -> date | None:
     return None
 
 
+def _sheet_year(sheet: str) -> int:
+    return int(sheet) if sheet.strip().isdigit() else LIVE_YEAR
+
+
 def read_rows(path: str, sheet: str = SHEET) -> list[Row]:
     from openpyxl import load_workbook  # only the import needs it
 
-    wb = load_workbook(path, read_only=True, data_only=True)
+    wb = load_workbook(path, data_only=True)  # not read-only: an earlier year's status is the row's colour
     if sheet not in wb.sheetnames:
         raise ImportRefused(f'The workbook has no sheet named "{sheet}" (it has: {", ".join(wb.sheetnames)}).')
-    rows = wb[sheet].iter_rows(values_only=True)
-    header = [str(h or "").strip().lower() for h in next(rows)]
+    ws = wb[sheet]
+    year = _sheet_year(sheet)
+    all_rows = list(ws.iter_rows())
+    # The header is the first row with a "#" column (the 2025 sheet has a title and a colour legend above it).
+    header_at = next((i for i, cells in enumerate(all_rows[:8])
+                      if "#" in [str(c.value or "").strip() for c in cells]), 0)
+    header = [str(c.value or "").strip().lower() for c in all_rows[header_at]]
     index = {COLUMNS[h]: i for i, h in enumerate(header) if h in COLUMNS}
-    missing = {"sender", "number", "brief_date", "client", "brief", "brand", "status"} - set(index)
+    required = {"sender", "number", "brief_date", "client", "brief", "brand"} | ({"status"} if year == LIVE_YEAR else set())
+    missing = required - set(index)
     if missing:
         raise ImportRefused(f"The sheet is missing these columns: {', '.join(sorted(missing))}.")
 
-    def cell(values, name):
+    def cell(cells, name):
         i = index.get(name)
-        return values[i] if i is not None and i < len(values) else None
+        return cells[i].value if i is not None and i < len(cells) else None
+
+    def colour_status(cells):
+        i = index.get("client", 0)
+        fill = cells[i].fill if i < len(cells) else None
+        rgb = fill.fgColor.rgb if fill is not None and fill.fill_type not in (None, "none") else None
+        return FILL_STATUS.get(rgb, "") if isinstance(rgb, str) else ""
 
     out = []
-    for values in rows:
-        if not any(v not in (None, "") for v in values):
+    for cells in all_rows[header_at + 1:]:
+        values = [c.value for c in cells]
+        if not any(v not in (None, "") and str(v).strip() for v in values[:14]):
             continue
-        number = cell(values, "number")
+        number = cell(cells, "number")
+        n = int(float(number)) if number not in (None, "") and str(number).strip() else 0
+        proposal = _excel_date(cell(cells, "proposal_date")) or _excel_date(cell(cells, "financial_date"))
+        status = str(cell(cells, "status") or "").strip() if "status" in index else colour_status(cells)
         out.append(Row(
-            number=int(float(number)) if number not in (None, "") else 0,
-            sender=str(cell(values, "sender") or "").strip(),
-            brief_date=_excel_date(cell(values, "brief_date")),
-            client=" ".join(str(cell(values, "client") or "").split()),
-            brief=" ".join(str(cell(values, "brief") or "").split()),
-            brand_code=str(cell(values, "brand") or "").strip().lower(),
-            deadline=_excel_date(cell(values, "deadline")),
-            proposal_date=_excel_date(cell(values, "proposal_date")),
-            expected=cell(values, "expected"),
-            actual=cell(values, "actual"),
-            status=str(cell(values, "status") or "").strip(),
+            number=n,
+            sender=str(cell(cells, "sender") or "").strip(),
+            brief_date=_excel_date(cell(cells, "brief_date")),
+            client=" ".join(str(cell(cells, "client") or "").split()),
+            brief=" ".join(str(cell(cells, "brief") or "").split()),
+            brand_code=" ".join(str(cell(cells, "brand") or "").split()).lower(),
+            deadline=_excel_date(cell(cells, "deadline")),
+            proposal_date=proposal,
+            expected=cell(cells, "expected"),
+            actual=cell(cells, "actual"),
+            status=status,
+            year=year,
+            key=n if year == LIVE_YEAR else year * 1000 + n,
         ))
     return out
 
@@ -311,6 +380,23 @@ def map_status(text: str, has_proposal_date: bool = False) -> tuple[str, str] | 
     return STATUS.get(text.strip().lower())
 
 
+def row_status(row: Row, today: date, stale_days: int | None = PENDING_STALE_DAYS) -> tuple[str, str, str | None] | None:
+    """
+    (request status, opportunity stage, why it differs from the sheet or None). An earlier year's row is
+    closed history (PAST_STATUS); in the live sheet, when stale_days is given, a "Pending" brief older than
+    that was never answered and is closed as lost.
+    """
+    if row.year != LIVE_YEAR:
+        mapped = PAST_STATUS.get(row.status.strip().lower())
+        return (*mapped, None) if mapped else None
+    mapped = map_status(row.status, row.proposal_date is not None)
+    if mapped is None:
+        return None
+    if stale_days is not None and mapped[0] == "shared_with_client" and row.brief_date             and (today - row.brief_date).days > stale_days:
+        return ("rejected", "lost", f"pending since {row.brief_date.isoformat()}, closed as cancelled on import")
+    return (*mapped, None)
+
+
 def _cell_day(value, brief: date | None) -> date | None:
     """A date column (exact date, "12 March", a range's last day, or a month's first day), else None."""
     ev = parse_event(value, brief)
@@ -333,7 +419,7 @@ def sheet_history(row: Row, status: str, today: date) -> list[tuple[str, date]]:
             steps += [("ready_for_bd", row.proposal_date), ("shared_with_client", row.proposal_date)]
         elif status == "shared_with_client":
             steps.append(("shared_with_client", brief))
-        if status in ("accepted", "rejected", "postponed"):
+        if status in ("accepted", "rejected", "postponed", "closed_postponed"):
             outcome = _cell_day(row.actual, brief) or _cell_day(row.expected, brief) or brief
             steps.append((status, outcome))
     out, prev = [], brief
@@ -365,6 +451,7 @@ class Planned:
     client_name: str  # the client as it will be named (after a merge)
     needs_review: bool = False  # Pending without a proposal date: imported as In Progress, to be checked
     event_name: str | None = None  # see event_name()
+    status_note: str | None = None  # e.g. a long-pending row closed as cancelled on import
 
 
 @dataclass
@@ -383,18 +470,19 @@ def _sender_key(name: str) -> str:
     return name.strip().lower()
 
 
-def build_plan(db: Session, rows: list[Row]) -> Plan:
+def build_plan(db: Session, rows: list[Row], today: date | None = None, stale_days: int | None = None) -> Plan:
+    today = today or date.today()
     plan = Plan(rows_read=len(rows))
     imported = set(db.scalars(select(ProposalRequest.import_row).where(ProposalRequest.import_row.is_not(None))).all())
     existing = {normalize_name(c.name): c.id for c in db.scalars(select(Client)).all()}
     users = {u.id: u for u in db.scalars(select(User)).all()}
     groups = defaultdict(list)
-    for row in sorted(rows, key=lambda r: r.number):
+    for row in sorted(rows, key=lambda r: (r.year, r.number)):
         if row.brand_code in SKIPPED_BRANDS:
             plan.skipped.append((row, f"{row.brand_code.upper()} is not one of our brands"))
             continue
         brand = BRAND_CODES.get(row.brand_code)
-        mapped = map_status(row.status, row.proposal_date is not None)
+        mapped = row_status(row, today, stale_days)
         if brand is None:
             plan.skipped.append((row, f'unknown brand "{row.brand_code}"'))
             continue
@@ -404,16 +492,16 @@ def build_plan(db: Session, rows: list[Row]) -> Plan:
         if not row.client or not row.brief_date:
             plan.skipped.append((row, "no client or no brief date"))
             continue
-        if row.number in imported:
+        if row.key in imported:
             plan.already += 1
             continue
-        key = _sender_key(row.sender)
+        key = _sender_key(row.sender) or BLANK_SENDER
         if key not in SENDERS:
             plan.new_people[key] = row.sender.strip().title()
         event = parse_event(row.actual if row.actual not in (None, "") else row.expected, row.brief_date)
         name = client_name(row.client)
         planned = Planned(row, brand, map_service(brand, row.brief), mapped[0], mapped[1], event, key,
-                          normalize_name(name), name, False, event_name(row.client, row.brief))
+                          normalize_name(name), name, False, event_name(row.client, row.brief), mapped[2])
         plan.create.append(planned)
         groups[planned.client_key].append(planned)
 
@@ -425,10 +513,10 @@ def build_plan(db: Session, rows: list[Row]) -> Plan:
         if key in existing:
             plan.clients_existing[key] = existing[key]
             continue
-        latest_first = sorted(items, key=lambda p: (p.row.brief_date, p.row.number), reverse=True)
+        latest_first = sorted(items, key=lambda p: (p.row.brief_date, p.row.key), reverse=True)
         owner = next((p.owner_key for p in latest_first if active_sender(p.owner_key)), "noha")
         brands = []
-        for p in sorted(items, key=lambda p: p.row.number):
+        for p in sorted(items, key=lambda p: (p.row.year, p.row.number)):
             if p.brand not in brands:
                 brands.append(p.brand)
         plan.clients_new[key] = {"name": latest_first[0].client_name, "brands": brands, "owner_key": owner,
@@ -467,11 +555,18 @@ def _brief(row: Row) -> str | None:
     return row.brief or None
 
 
-def history_entries(steps, number: int, actor: Actor, follow_up: date | None) -> list[RequestStatusHistory]:
+def import_note(number: int, year: int = LIVE_YEAR) -> str:
+    return IMPORT_NOTE.format(n=number) if year == LIVE_YEAR else YEAR_NOTE.format(year=year, n=number)
+
+
+def history_entries(steps, number: int, actor: Actor, follow_up: date | None, year: int = LIVE_YEAR,
+                    extra: str | None = None) -> list[RequestStatusHistory]:
     """One imported entry per step (shown as "From the 2026 tracker (row #N)", never with a name)."""
+    note = import_note(number, year) + (f" · {extra}" if extra else "")
     return [RequestStatusHistory(
         seq=i + 1, status=st, changed_by_id=actor.user_id, role=actor.active_role, changed_at=_at(day, 9 + i),
-        note=IMPORT_NOTE.format(n=number), version=1, lost_reason="not_recorded" if st == "rejected" else None,
+        note=note if i == len(steps) - 1 else import_note(number, year), version=1,
+        lost_reason="not_recorded" if st == "rejected" else None,
         follow_up_on=follow_up if st == "postponed" else None, imported=True,
     ) for i, (st, day) in enumerate(steps)]
 
@@ -495,7 +590,7 @@ def apply_plan(db: Session, plan: Plan, importer: str, now: datetime) -> dict:
         db.add(client)
         db.flush()
         db.add(ClientHistory(client_id=client.id, event="created", changed_by_id=actor.user_id, role=actor.active_role,
-                             changed_at=now, details={"importedFrom": "Proposal Tracker 2026", "owner": client.owner_id}))
+                             changed_at=now, details={"importedFrom": "Proposal Tracker", "owner": client.owner_id}))
         client_ids[key] = client.id
 
     created = Counter()
@@ -510,7 +605,7 @@ def apply_plan(db: Session, plan: Plan, importer: str, now: datetime) -> dict:
             db, actor=actor, client_id=client_ids[p.client_key], brand=p.brand, service=p.service, owner_id=owner,
             stage=p.stage, event_date=ev.start, event_date_precision="month" if ev.precision == "month" else "day",
             lost_reason="not_recorded" if p.stage == "lost" else None, reason_code="imported",
-            note=IMPORT_NOTE.format(n=row.number), now=when, allow_inactive_owner=True,
+            note=import_note(row.number, row.year), now=when, allow_inactive_owner=True,
         )
         opp.imported = True
         opp.event_end_date = ev.end
@@ -521,11 +616,13 @@ def apply_plan(db: Session, plan: Plan, importer: str, now: datetime) -> dict:
             submitted_by_id=owner, submitted_at=submitted, status=p.status, required_by=row.deadline,
             event_date=ev.start, event_date_precision=ev.precision, event_end_date=ev.end, follow_up_on=follow_up,
             participants=None, requirements_summary=_brief(row), specific_requirements=None, am_price=None,
-            version=1, price_change=None, last_updated=when, imported=True, import_row=row.number,
-            original_status=row.status, needs_review=False, event_name=p.event_name,
+            version=1, price_change=None, last_updated=when, imported=True, import_row=row.key,
+            # An earlier year's "Done" is an event done (the Events page reads "Event Completed" as Done).
+            original_status=("Event Completed" if row.year != LIVE_YEAR and p.status == "accepted" else row.status),
+            needs_review=False, event_name=p.event_name,
             event_status="confirmed" if p.status == "accepted" else None, created_at=submitted, updated_at=when,
         )
-        request.history = history_entries(steps, row.number, actor, follow_up)
+        request.history = history_entries(steps, row.number, actor, follow_up, row.year, p.status_note)
         db.add(request)
         db.flush()
         created[p.status] += 1
@@ -543,7 +640,8 @@ def planned_timing(p: Planned, today: str) -> str | None:
     start = None
     if p.event.start:
         start = p.event.start.strftime("%Y-%m") if p.event.precision == "month" else p.event.start.isoformat()
-    return event_timing({"status": p.status, "imported": True, "originalStatus": p.row.status,
+    original = "Event Completed" if p.row.year != LIVE_YEAR and p.status == "accepted" else p.row.status
+    return event_timing({"status": p.status, "imported": True, "originalStatus": original,
                          "eventDate": start, "eventEndDate": p.event.end.isoformat() if p.event.end else None,
                          "eventDatePrecision": p.event.precision}, today)
 
@@ -555,14 +653,20 @@ def report(plan: Plan, applied: dict | None = None, today: str | None = None) ->
     add(f"Requests to create: {len(plan.create)}" + (f"   (already imported before: {plan.already})" if plan.already else ""))
     add(f"Skipped: {len(plan.skipped)}")
     for row, reason in plan.skipped:
-        add(f"  row #{row.number}: {row.client} ({reason})")
+        add(f"  {row.year} row #{row.number}: {row.client} ({reason})")
     add("")
     add("Status (sheet -> EventFlow):")
-    pairs = Counter((p.row.status, STATUS_LABELS[p.status]) for p in plan.create)
+    pairs = Counter((f"{p.row.year} {p.row.status}" + (" (old)" if p.status_note else ""), STATUS_LABELS[p.status])
+                    for p in plan.create)
     for (sheet, ours), n in sorted(pairs.items(), key=lambda x: (x[0][1], x[0][0])):
-        add(f"  {sheet:<16} -> {ours:<24} {n:>3}")
+        add(f"  {sheet:<26} -> {ours:<24} {n:>3}")
     totals = Counter(STATUS_LABELS[p.status] for p in plan.create)
     add("  Totals: " + " · ".join(f"{k} {v}" for k, v in sorted(totals.items())))
+    stale = [p for p in plan.create if p.status_note]
+    if stale:
+        add(f"  Pending for a long time, closed as cancelled ({len(stale)}):")
+        for p in sorted(stale, key=lambda p: p.row.brief_date):
+            add(f"    {p.row.label:<5} {p.row.brief_date}  {p.client_name}")
     add("")
     add("People (Brief Sent by -> account):")
     for key, n in sorted(Counter(p.owner_key for p in plan.create).items()):
@@ -597,34 +701,34 @@ def report(plan: Plan, applied: dict | None = None, today: str | None = None) ->
         ("TBD -> not set", kinds["tbd"]), ("empty -> not set", kinds["empty"]), ("unparsed -> not set", kinds["unparsed"])]))
     for p in plan.create:
         if p.event.kind == "unparsed":
-            add(f"  unparsed: row #{p.row.number}: {p.event.text!r}")
+            add(f"  unparsed: row {p.row.label}: {p.event.text!r}")
     add(f"Deadlines missing: {sum(1 for p in plan.create if not p.row.deadline)} · "
         f"proposal dates missing: {sum(1 for p in plan.create if not p.row.proposal_date)}")
     add(f"Opportunities to create: {len(plan.create)} (one per request)")
     add("")
     named = [p for p in plan.create if p.event_name]
     add(f"Event names: {len(named)} of {len(plan.create)} (the brief is kept exactly as in the sheet). Examples:")
-    by_number = sorted(plan.create, key=lambda p: p.row.number)
+    by_number = sorted(plan.create, key=lambda p: (p.row.year, p.row.number))
     one_per_merge = list({p.client_name: p for p in reversed(by_number) if p.client_name != p.row.client}.values())
     others = [p for p in by_number if p.client_name == p.row.client]
     step = max(1, len(others) // max(1, 10 - len(one_per_merge)))
     examples = sorted(one_per_merge, key=lambda p: p.row.number) + others[::step][:10 - len(one_per_merge)]
     for p in examples:
-        add(f"  #{p.row.number:<4} {p.client_name} · {p.event_name or '—'}   (sheet client: {p.row.client!r})")
+        add(f"  {p.row.label:<5} {p.client_name} · {p.event_name or '—'}   (sheet client: {p.row.client!r})")
     today = today or date.today().isoformat()
-    timing = {p.row.number: planned_timing(p, today) for p in plan.create}
+    timing = {p.row.key: planned_timing(p, today) for p in plan.create}
     counts = Counter(timing.values())
     upcoming = counts["upcoming"] + counts["undated"]
-    done_this_year = sum(1 for p in plan.create if timing[p.row.number] == "done"
+    done_this_year = sum(1 for p in plan.create if timing[p.row.key] == "done"
                          and (p.event.end or p.event.start or p.row.brief_date).year == int(today[:4]))
     add("")
     add(f"Events page (Won {counts['done'] + upcoming}, as of {today}): Done {counts['done']} · "
         f"Upcoming {upcoming} (of which \"Date not set\" {counts['undated']})")
     add(f"  Top line: \"{done_this_year} done this year · {upcoming} upcoming\"")
-    for p in sorted(plan.create, key=lambda p: p.row.number):
-        if timing[p.row.number] in ("upcoming", "undated"):
-            label = "Date not set" if timing[p.row.number] == "undated" else "Upcoming"
-            add(f"  {label:<12} #{p.row.number:<4} {p.client_name} · {p.event_name or '—'}   "
+    for p in sorted(plan.create, key=lambda p: (p.row.year, p.row.number)):
+        if timing[p.row.key] in ("upcoming", "undated"):
+            label = "Date not set" if timing[p.row.key] == "undated" else "Upcoming"
+            add(f"  {label:<12} {p.row.label:<5} {p.client_name} · {p.event_name or '—'}   "
                 f"(sheet status {p.row.status!r}, event {p.event.text or '—'})")
     if applied is not None:
         add("")
@@ -636,9 +740,9 @@ def report(plan: Plan, applied: dict | None = None, today: str | None = None) ->
 
 
 def run(path: str, *, database_url: str, apply: bool = False, importer: str = "u-noha", sheet: str = SHEET,
-        now: datetime | None = None) -> str:
+        now: datetime | None = None, stale_days: int | None = None) -> str:
     now = now or utcnow()
-    rows = read_rows(path, sheet)
+    rows = [row for name in sheet.split(",") if name.strip() for row in read_rows(path, name.strip())]
     engine = make_engine(database_url)
     try:
         with make_sessionmaker(engine)() as db:
@@ -646,8 +750,8 @@ def run(path: str, *, database_url: str, apply: bool = False, importer: str = "u
             if kind != "real":
                 raise ImportRefused(f"Refusing: this database is not the real one (data_kind={kind!r}). "
                                     "Run python -m app.setup_real first; the demo database is never imported into.")
-            plan = build_plan(db, rows)
             today = cairo_today_iso(now)
+            plan = build_plan(db, rows, date.fromisoformat(today), stale_days)
             if not apply:
                 return report(plan, today=today)
             applied = apply_plan(db, plan, importer, now)
@@ -658,14 +762,17 @@ def run(path: str, *, database_url: str, apply: bool = False, importer: str = "u
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m app.import_tracker", description="Import the 2026 tracker.")
+    parser = argparse.ArgumentParser(prog="python -m app.import_tracker", description="Import the Proposal Tracker.")
     parser.add_argument("file")
     parser.add_argument("--apply", action="store_true", help="import (without it: dry run, nothing changes)")
-    parser.add_argument("--sheet", default=SHEET)
+    parser.add_argument("--sheet", default=SHEET, help='a sheet, or several separated by commas ("2025,2026")')
+    parser.add_argument("--close-pending-older-than", dest="stale_days", type=int, default=None, metavar="DAYS",
+                        help='close 2026 "Pending" briefs older than DAYS as cancelled (never answered)')
     parser.add_argument("--as", dest="importer", default="u-noha", help="who runs the import (stored, not shown)")
     args = parser.parse_args(argv)
     try:
-        print(run(args.file, database_url=real_database_url(), apply=args.apply, importer=args.importer, sheet=args.sheet))
+        print(run(args.file, database_url=real_database_url(), apply=args.apply, importer=args.importer, sheet=args.sheet,
+                  stale_days=args.stale_days))
     except ImportRefused as exc:
         print(str(exc), file=sys.stderr)
         return 2
