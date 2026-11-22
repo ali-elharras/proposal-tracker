@@ -101,12 +101,11 @@ export default function OpportunityDetailPage() {
 
   return (
     <PageLayout title={client?.name ?? opp.clientId} subtitle={brandService(opp)} actions={headerActions}
-      crumbs={[{ label: 'Opportunities', to: '/opportunities' }, { label: opp.id }]}>
+      crumbs={[{ label: 'Opportunities', to: '/opportunities' }]}>
       <div className="profile-meta">
         <StatusBadge kind="opportunity" status={opp.stage} />
         <span className="tabular">{formatCurrency(opp.estimatedValue)} <span className="muted">estimated</span></span>
         <Person user={owner} suffix="Owner" />
-        <span className="id-chip">{opp.id}</span>
       </div>
 
       <Tabs label="Opportunity sections" value={tab} onChange={setTab} tabs={[
@@ -152,7 +151,7 @@ export default function OpportunityDetailPage() {
       )}
 
       {tab === 'requests' && (
-        <Card title="Proposal requests" subtitle="Requests you can see for this opportunity" flush>
+        <Card title="Proposal requests" flush>
           {linked.length === 0 && !requests.isLoading ? (
             <div className="empty-line card-pad"><span>No proposal requests for this opportunity.</span>{newRequest}</div>
           ) : (
@@ -177,7 +176,7 @@ export default function OpportunityDetailPage() {
       )}
 
       {tab === 'history' && (
-        <Card title="History" subtitle="Stage changes and edits, newest first">
+        <Card title="History">
           <OpportunityHistoryList items={history} usersById={usersById}
             empty={API_MODE ? 'No changes recorded yet.' : 'History is stored by the backend; the demo store has none.'} />
         </Card>

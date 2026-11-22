@@ -7,7 +7,7 @@ archive, transfer to another owner, and contact people. Every write is one trans
 from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 from sqlalchemy import func, select
@@ -17,11 +17,13 @@ from .. import config_domain as cfg
 from ..clock import get_now, iso_z
 from ..database import get_db
 from ..domain import access, crm
-from ..errors import not_found
+from ..domain import deletion as deletion_rules
+from ..errors import conflict, forbidden, not_found
 from ..identity import Actor, get_current_actor
 from ..models import Client, ClientBrand
 from ..schemas import ClientList, ClientOut
 from ..services import clients as service
+from ..services import deletion as deletion_service
 from ..services.proposal_requests import _users
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
@@ -77,6 +79,9 @@ def _detail(db: Session, client: Client, actor: Actor) -> dict:
     """The client as in the list, plus what THIS viewer may do with it (the UI shows only these)."""
     permissions = crm.client_permissions(service.client_dict(client), actor, _users(db))
     out = {**ClientOut.of(client).model_dump(by_alias=True, mode="json"), "permissions": permissions}
+    out["canDelete"] = deletion_rules.can_delete_client(service.client_dict(client), actor, _users(db))
+    if out["canDelete"]["allowed"]:
+        out["deleteImpact"] = deletion_service.what_a_client_delete_removes(db, client.id)
     if permissions["transfer"]["allowed"]:
         out["transferPreview"] = service.transfer_preview(db, client)
     return out
@@ -193,6 +198,25 @@ def archive_client(client_id: str, body: VersionIn, actor: Actor = Depends(get_c
                    now: datetime = Depends(get_now), db: Session = Depends(get_db)):
     client = service.load_client_for_write(db, client_id)
     return _respond(db, service.archive_client(db, actor, client, body.expected_row_version, now), actor)
+
+
+@router.post("/{client_id}/delete")
+def delete_client(client_id: str, body: VersionIn, request: Request, actor: Actor = Depends(get_current_actor),
+                  db: Session = Depends(get_db)):
+    """Deletes the client and all its proposals, events, opportunities and contacts, for good."""
+    client = service.load_client_for_write(db, client_id)
+    if not access.can_see_client(client.brand_ids, actor, _users(db)):
+        raise not_found(f"Client {client_id!r} not found.")
+    if body.expected_row_version is None or body.expected_row_version != client.row_version:
+        raise conflict("This client was changed by someone else. Reload and try again.", code="stale")
+    allowed = deletion_rules.can_delete_client(service.client_dict(client), actor, _users(db))
+    if not allowed["allowed"]:
+        raise forbidden(allowed["reason"])
+    name = client.name
+    done = deletion_service.delete_client(db, client)
+    db.commit()
+    deletion_service.delete_files(request.app.state.storage, done["files"])
+    return {"deleted": client_id, "message": f"{name} and everything of theirs were deleted permanently."}
 
 
 @router.post("/{client_id}/transfer")

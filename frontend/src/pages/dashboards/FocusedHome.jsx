@@ -14,6 +14,7 @@ import { todosDueToday } from '../../domain/todos.js'
 import { operationsSections } from '../../domain/events.js'
 import { cairoTodayISO, eventCounts } from '../../domain/events.js'
 import RemindButton from '../../components/proposal/RemindButton.jsx'
+import { WaitingCell } from '../../components/proposal/WhereNow.jsx'
 import { optionLabel } from '../../domain/lists.js'
 import { isDeadlineUpcoming, isRequestOverdue } from '../../domain/metrics.js'
 import { ROLE } from '../../domain/roles.js'
@@ -22,7 +23,7 @@ import CountUp from '../../components/ui/CountUp.jsx'
 import SegmentedControl from '../../components/ui/SegmentedControl.jsx'
 import { PROPOSAL_STATUS as PS, getStage, getStatus, stageOf, subLabelFor } from '../../domain/status.js'
 import { followUpDue } from '../../domain/tracker.js'
-import { effectiveWaiting, getTeam, viewerPill, waitingDays } from '../../domain/waiting.js'
+import { effectiveWaiting, getTeam, waitingDays } from '../../domain/waiting.js'
 import { rowMarkers } from '../../domain/conversation.js'
 import StatusPill, { RowMarkers } from '../../components/ui/StatusPill.jsx'
 import { formatEventDate, formatShortDate } from '../../lib/format.js'
@@ -31,7 +32,6 @@ import { proposalLink, proposalsLink } from '../../lib/links.js'
 const NEEDS_ATTENTION_MAX = 5
 const PERIOD_SHORT = { month: 'Month', quarter: 'Quarter', year: 'Year', all: 'All time' }
 const isOpen = (r) => r.status !== PS.DRAFT && !getStatus('proposal', r.status).closed
-const daysText = (n) => (n === null ? '—' : n === 0 ? 'today' : n === 1 ? '1 day' : `${n} days`)
 
 /** The period of the funnel strip (Home: this year by default), kept in the URL. */
 function usePeriod() {
@@ -138,7 +138,7 @@ function blocking(r, lists) {
 export function NeedsAttention({ requests, today, defaultChip = 'me' }) {
   const { user, activeRole } = useCurrentUser()
   const viewer = { userId: user.id, activeRole }
-  const { usersById, clientsById } = useLookups()
+  const { clientsById } = useLookups()
   const lists = useLists().data
   const [chip, setChip] = useState(defaultChip)
   const open = requests.filter((r) => isOpen(r) && !r.needsReview)
@@ -188,12 +188,11 @@ export function NeedsAttention({ requests, today, defaultChip = 'me' }) {
               <span>{blocking(r, lists)}</span>
             ),
           },
-          { key: 'who', header: 'Who acts next', nowrap: true, render: (r) => <StatusPill pill={viewerPill(r, viewer, usersById, today)} request={r} /> },
           {
-            key: 'wait', header: 'Waiting', nowrap: true,
+            key: 'who', header: 'Waiting on',
             render: (r) => (
               <span className="wait-cell">
-                <span className="tabular">{daysText(waitingDays(effectiveWaiting(r), now))}</span>
+                <WaitingCell request={r} />
                 <RemindButton request={r} compact />
               </span>
             ),
@@ -251,7 +250,6 @@ export function BdHome({ subtitle }) {
   const mineLink = (extra) => proposalsLink({ bdOwner: user.id, ...extra })
   return (
     <PageLayout title="Dashboard" subtitle={subtitle}>
-      <NeedsAttention requests={mine} today={today} />
       <Cards items={[
         { label: 'Ready to send', icon: 'document', value: open.filter((r) => r.status === PS.READY_FOR_BD).length,
           note: 'Proposals the AM finished', to: mineLink({ status: PS.READY_FOR_BD }) },
@@ -260,6 +258,7 @@ export function BdHome({ subtitle }) {
         { label: 'Postponed follow-ups due', icon: 'calendar', value: open.filter((r) => followUpDue(r)).length,
           note: 'Follow-up date reached', to: mineLink({ status: PS.POSTPONED }) },
       ]} />
+      <NeedsAttention requests={mine} today={today} />
       <FunnelStrip requests={mine} period={period} onPeriod={setPeriod} today={today} scopeLabel="Your requests" />
       <RadarCount />
     </PageLayout>
@@ -286,11 +285,15 @@ export function AmHome({ subtitle }) {
         { label: 'Overdue', icon: 'alert', value: overdue.length, tone: overdue.length ? 'danger' : 'default',
           note: 'Past the proposal deadline', to: mineLink({ deadline: 'overdue' }) },
       ]} />
-      <NeedsAttention requests={mine} today={today} />
+      <div className="dash-grid">
+        <div className="dash-grid__main"><NeedsAttention requests={mine} today={today} /></div>
+        <div className="dash-grid__side">
+          <ShortList title="Due this week" rows={dueThisWeek} empty="Nothing due in the next 7 days."
+            render={(r) => `due ${formatShortDate(r.requiredBy)}`}
+            viewAll={dueThisWeek.length > 5 ? <Link to={mineLink({ deadline: 'upcoming' })}>View all ({dueThisWeek.length})</Link> : null} />
+        </div>
+      </div>
       <FunnelStrip requests={mine} period={period} onPeriod={setPeriod} today={today} scopeLabel="Requests assigned to you" />
-      <ShortList title="Due this week" rows={dueThisWeek} empty="Nothing due in the next 7 days."
-        render={(r) => `due ${formatShortDate(r.requiredBy)}`}
-        viewAll={dueThisWeek.length > 5 ? <Link to={mineLink({ deadline: 'upcoming' })}>View all ({dueThisWeek.length})</Link> : null} />
     </PageLayout>
   )
 }
@@ -312,16 +315,20 @@ export function HeadHome({ subtitle }) {
         { label: 'Overdue', icon: 'alert', value: overdue, tone: overdue ? 'danger' : 'default', note: 'Past the proposal deadline',
           to: proposalsLink({ deadline: 'overdue' }) },
       ]} />
-      <NeedsAttention requests={all} today={today} defaultChip="all" />
+      <div className="dash-grid">
+        <div className="dash-grid__main"><NeedsAttention requests={all} today={today} defaultChip="all" /></div>
+        <div className="dash-grid__side">
+          <ShortList title="Last 5 results" rows={lastFive.map((x) => ({ ...x.request, resultAt: x.at }))} empty="No results yet."
+            render={(r) => (
+              <>
+                <StatusPill pill={r.status === PS.ACCEPTED ? { kind: 'won', label: 'Confirmed' } : { kind: 'lost', label: 'Lost' }} request={r} />
+                {' '}{formatShortDate(r.resultAt)}
+              </>
+            )} />
+          <RadarCount />
+        </div>
+      </div>
       <FunnelStrip requests={all} period={period} onPeriod={setPeriod} today={today} scopeLabel="The company" />
-      <RadarCount />
-      <ShortList title="Last 5 results" rows={lastFive.map((x) => ({ ...x.request, resultAt: x.at }))} empty="No results yet."
-        render={(r) => (
-          <>
-            <StatusPill pill={r.status === PS.ACCEPTED ? { kind: 'won', label: 'Confirmed' } : { kind: 'lost', label: 'Lost' }} request={r} />
-            {' '}{formatShortDate(r.resultAt)}
-          </>
-        )} />
     </PageLayout>
   )
 }

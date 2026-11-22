@@ -6,8 +6,8 @@ import { isPlainClick, usePeek } from '../../lib/peek.js'
  * Compact table. On phones each row becomes a small card: every cell under its column name (data-label).
  * columns: [{ key, header, render(row), align: 'start'|'end', nowrap }]
  * rowHref(row): optional; makes the whole row open that link (keyboard: Enter).
- * rowPeek(row): optional peek token (lib/peek.js); a plain click or Enter opens the quick peek instead,
- *   Ctrl / Cmd-click still opens rowHref.
+ * rowPeek(row): optional peek token (lib/peek.js), used only when a row has no rowHref.
+ *   With rowHref a click or Enter opens the page directly; Ctrl / Cmd-click opens it in a new tab.
  * rowBrand(row): optional brand id; the row gets the brand's thin left edge.
  */
 const INTERACTIVE = 'a, button, input, select, textarea, time'
@@ -42,8 +42,10 @@ export default function DataTable({ columns, rows, rowKey, rowHref, rowPeek, row
             // would add the page to the history twice (Back would then seem to do nothing).
             const openRow = (e, viaKey) => {
               if (e.target.closest(INTERACTIVE)) return
-              if (peek && (viaKey || isPlainClick(e))) open(peek)
+              // One click opens the page itself (no preview step). Ctrl / Cmd-click: a new tab.
+              if (href && !viaKey && !isPlainClick(e) && (e.ctrlKey || e.metaKey)) window.open(href, '_blank', 'noopener')
               else if (href) navigate(href)
+              else if (peek) open(peek)
             }
             return (
               <tr

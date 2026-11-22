@@ -30,7 +30,7 @@ export default function ListsEditor({ onMessage }) {
   }
 
   return (
-    <Card title="Dropdown lists" subtitle="Add, rename or hide options. Nothing is deleted, so past choices keep their names.">
+    <Card title="Dropdown lists" subtitle="Add, rename or hide options">
       <div className="lists-editor">
         <label className="form-field">
           <span className="form-field__label">List</span>

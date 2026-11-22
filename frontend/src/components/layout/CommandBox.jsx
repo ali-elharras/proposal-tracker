@@ -9,7 +9,6 @@ import { commandMatches } from '../../domain/command.js'
 import { visibleSections } from '../../navigation.js'
 import { formatEventDate } from '../../lib/format.js'
 import { clientLink, newRequestLink, proposalLink } from '../../lib/links.js'
-import { peekToken } from '../../lib/peek.js'
 
 const OPEN_EVENT = 'iee:command'
 const PER_GROUP = 5
@@ -194,7 +193,7 @@ export function EventSource({ report }) {
     report('events', (data.items ?? []).map((e) => ({
       id: `ev:${e.id}`, label: [e.clientName, e.eventName].filter(Boolean).join(' · '),
       hint: e.eventDate ? formatEventDate(e.eventDate, e.eventEndDate, e.eventDatePrecision) : e.id,
-      keywords: e.id, brand: e.brand, to: `/events?peek=${encodeURIComponent(peekToken('event', e.id))}`,
+      keywords: e.id, brand: e.brand, to: `/events/${encodeURIComponent(e.id)}`,
     })))
   }, [data, report])
   return null

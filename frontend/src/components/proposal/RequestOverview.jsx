@@ -4,10 +4,8 @@ import { optionLabel } from '../../domain/lists.js'
 import { Link } from 'react-router-dom'
 import Badge from '../ui/Badge.jsx'
 import { Person } from '../dashboard/cells.jsx'
-import { getBrand } from '../../domain/brands.js'
 import { CLIENT_TYPES } from '../../domain/catalog.js'
 import { ROLE, roleLabel } from '../../domain/roles.js'
-import { effectiveWaiting, waitingLabel } from '../../domain/waiting.js'
 import RelTime from '../ui/RelTime.jsx'
 
 function Field({ label, children, hint }) {
@@ -32,7 +30,6 @@ export default function RequestOverview({ request, client, usersById }) {
     .sort((a, b) => a.changedAt.localeCompare(b.changedAt))
   const originalOwner = transfers[0]?.fromUser ?? request.bdOwner
   const am = usersById[request.assignedAM]
-  const waiting = effectiveWaiting(request) // the one source of truth (a manual waiting-on wins)
   const samePerson = request.bdOwner === request.assignedAM
   const lists = useLists().data
   const { pages } = useCurrentUser()
@@ -43,7 +40,7 @@ export default function RequestOverview({ request, client, usersById }) {
         <Field label="Client" hint={client ? [CLIENT_TYPES[client.type]?.label, optionLabel(lists, 'cities', client.city)].filter(Boolean).join(' · ') : null}>
           {client && pages?.clients ? <Link to={`/clients/${encodeURIComponent(client.id)}`}>{client.name}</Link> : client?.name ?? '—'}
         </Field>
-        <Field label="BD owner" hint={`Client relationship owner · does the BD steps${transfers.length ? ` · transferred from ${usersById[originalOwner]?.name ?? originalOwner}` : ''}`}>
+        <Field label="BD owner" hint={transfers.length ? `Transferred from ${usersById[originalOwner]?.name ?? originalOwner}` : null}>
           <Person user={bdOwner} suffix={roleLabel(ROLE.BUSINESS_DEVELOPMENT)} />
         </Field>
         {request.createdBy !== originalOwner && (
@@ -51,17 +48,8 @@ export default function RequestOverview({ request, client, usersById }) {
             <Person user={creator} suffix={creator ? roleLabel(creator.roles[0], creator) : null} />
           </Field>
         )}
-        <Field label="Assigned AM" hint={`Routed automatically: ${getBrand(request.brand)?.name} requests go to this AM`}>
+        <Field label="Assigned AM">
           <Person user={am} suffix={roleLabel(ROLE.ACCOUNT_MANAGER, am)} />
-        </Field>
-        <Field label="Waiting on">
-          {waiting ? (
-            waiting.userId && (waiting.team === 'bd' || waiting.team === 'am')
-              ? <Person user={usersById[waiting.userId]} suffix={roleLabel(waiting.team === 'am' ? ROLE.ACCOUNT_MANAGER : ROLE.BUSINESS_DEVELOPMENT, usersById[waiting.userId])} />
-              : <span>{waitingLabel(waiting, usersById)}</span>
-          ) : (
-            <span className="muted">Nobody · request is closed</span>
-          )}
         </Field>
         <Field
           label="Submitted"
@@ -73,7 +61,6 @@ export default function RequestOverview({ request, client, usersById }) {
         >
           {request.submittedAt ? <RelTime value={request.submittedAt} /> : <span className="muted">Not submitted yet</span>}
         </Field>
-        <Field label="Last updated"><RelTime value={request.lastUpdated} /></Field>
       </dl>
       {samePerson && (
         <p className="overview__note">

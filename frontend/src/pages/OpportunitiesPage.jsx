@@ -153,7 +153,7 @@ export default function OpportunitiesPage() {
                 key: 'client', header: 'Client',
                 render: (o) => (
                   <span className="stack">
-                    <span><Link to={opportunityLink(o.id)}><ClientEvent name={clientsById[o.clientId]?.name ?? o.clientId} eventName={o.eventName} /></Link> <span className="id-chip">{o.id}</span></span>
+                    <span><Link to={opportunityLink(o.id)}><ClientEvent name={clientsById[o.clientId]?.name ?? o.clientId} eventName={o.eventName} /></Link></span>
                     <span className="muted">{brandService(o)}</span>
                   </span>
                 ),

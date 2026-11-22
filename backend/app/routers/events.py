@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from ..clock import cairo_today_iso, get_now, iso_z
 from ..database import begin_write, get_db
 from ..domain import events as rules
+from ..domain import deletion as deletion_rules
 from ..domain.access import can_see_request
 from ..domain.corrections import can_correct_status
 from ..domain.proposal_files import MIME, download_file_name
@@ -172,6 +173,7 @@ def _detail(db: Session, row, users, actor, today: str) -> dict:
     }
     if actor.active_role == "hr":  # staffing only: never files, conversations or the client's contact
         out.update({"file": None, "comments": [], "contact": None, "canOpenRequest": False})
+    out["canDelete"] = deletion_rules.can_delete_request(view, actor, users)  # deleting an event deletes its proposal
     return out
 
 

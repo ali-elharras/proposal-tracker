@@ -35,7 +35,11 @@ function SidebarLink({ item, newCount }) {
  */
 export default function Sidebar({ onClose }) {
   const { pages, activeRole } = useCurrentUser()
-  const items = visibleSections(pages, activeRole).flatMap((s) => s.items)
+  const all = visibleSections(pages, activeRole).flatMap((s) => s.items)
+  // Dashboard sits first in the menu for every role that has one, on its own above the groups. Only the
+  // menu's order: the page a role opens on (MENUS' first entry) and what it may open are unchanged.
+  const dashboard = all.find((i) => i.key === 'dashboard')
+  const items = dashboard ? [{ ...dashboard, group: null }, ...all.filter((i) => i !== dashboard)] : all
   const newCount = useNewCount()
 
   return (

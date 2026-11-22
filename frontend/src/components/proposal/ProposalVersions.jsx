@@ -12,7 +12,11 @@ export default function ProposalVersions({ request, usersById }) {
   const hasPrice = request.amPrice !== null && request.amPrice !== undefined
 
   return (
-    <Card title="Proposal" subtitle="Versions and AM prices (EGP) from the request history" flush>
+    <Card title="Versions and prices" flush>
+      {versions.length === 0 && !hasPrice ? (
+        // Nothing prepared yet: one quiet line instead of an empty "v1 / No price yet" block.
+        <p className="card-pad muted">No version or price yet. It appears when the AM marks the proposal ready.</p>
+      ) : <>
       <div className="proposal-current">
         <div>
           <div className="proposal-current__label">Current version</div>
@@ -58,6 +62,7 @@ export default function ProposalVersions({ request, usersById }) {
           ))}
         </ul>
       )}
+      </>}
       {!API_MODE && <p className="card-note">Proposal files need the backend; the demo store has none to download.</p>}
     </Card>
   )

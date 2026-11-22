@@ -11,14 +11,14 @@ function formatSize(bytes) {
 
 /**
  * Proposal files (API mode): the files this viewer may see, each downloadable, and, for the
- * assigned AM while the request is with the AM, a simple picker to upload the file for the
- * version being prepared. Who may upload, for which version, and what is accepted all come
+ * assigned AM while the request is with the AM, a drop zone: choosing or dropping a file uploads it
+ * for the version being prepared (one step). Who may upload, for which version, and what is accepted all come
  * from the server (request.upload and its error messages).
  * Minimal on purpose: the combined upload + price + Mark ready panel is Phase 4B.
  */
 export default function ProposalFiles({ request, usersById }) {
   const { available, upload, download, reload } = useProposalFileUpload(request)
-  const [file, setFile] = useState(null)
+  const [dragging, setDragging] = useState(false)
   const [pending, setPending] = useState(false)
   const [result, setResult] = useState(null) // { ok, message | error, stale }
   const inputRef = useRef(null)
@@ -28,21 +28,19 @@ export default function ProposalFiles({ request, usersById }) {
   const target = request.upload
   const files = request.files ?? []
 
-  async function send(e) {
-    e.preventDefault()
-    if (!file || pendingRef.current) return
+  // One step: choosing (or dropping) a file uploads it.
+  async function send(chosen) {
+    if (!chosen || pendingRef.current) return
     pendingRef.current = true
     setPending(true)
+    setResult(null)
     try {
-      const res = await upload(file)
+      const res = await upload(chosen)
       setResult(res)
-      if (res.ok) {
-        setFile(null)
-        if (inputRef.current) inputRef.current.value = ''
-      }
     } finally {
       pendingRef.current = false
       setPending(false)
+      if (inputRef.current) inputRef.current.value = ''
     }
   }
 
@@ -55,9 +53,9 @@ export default function ProposalFiles({ request, usersById }) {
   }
 
   return (
-    <Card title="Proposal files" subtitle="PDF or PowerPoint, one per version">
+    <Card title="Proposal file">
       {files.length === 0 ? (
-        <p className="muted">No proposal file has been uploaded yet.</p>
+        target?.allowed ? null : <p className="muted">No proposal file has been uploaded yet.</p>
       ) : (
         <ul className="file-list">
           {files.map((f) => (
@@ -76,22 +74,19 @@ export default function ProposalFiles({ request, usersById }) {
       )}
 
       {target?.allowed && (
-        <form className="file-upload" onSubmit={send}>
-          <label className="form-field">
-            <span className="form-field__label">
-              {target.replaces ? `Replace the file for version ${target.version}` : `Upload the file for version ${target.version}`}
-            </span>
-            <input ref={inputRef} id="proposal-upload" type="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation"
-              onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null) }} disabled={pending} />
-            <span className="form-field__hint">
-              PDF or PowerPoint (.pptx), up to 25 MB.
-              {target.startsWork && ' Uploading also moves the request to Preparing (In Progress).'}
-            </span>
-          </label>
-          <button type="submit" className="btn btn--primary" disabled={!file || pending} aria-busy={pending}>
-            {pending ? 'Uploading…' : 'Upload'}
-          </button>
-        </form>
+        <label className={`dropzone${dragging ? ' is-over' : ''}${pending ? ' is-busy' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); send(e.dataTransfer.files?.[0]) }}>
+          <input ref={inputRef} id="proposal-upload" type="file" className="sr-only"
+            accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            onChange={(e) => send(e.target.files?.[0])} disabled={pending} />
+          <strong>{pending ? 'Uploading…' : target.replaces ? `Replace the file for version ${target.version}` : `Upload the file for version ${target.version}`}</strong>
+          <span className="muted">
+            Drop it here or click to choose · PDF or PowerPoint, up to 25 MB
+            {target.startsWork && ' · moves it to Preparing'}
+          </span>
+        </label>
       )}
 
       {result && (

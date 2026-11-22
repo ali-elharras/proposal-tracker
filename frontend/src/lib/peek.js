@@ -36,12 +36,10 @@ export function usePeek() {
   return { peek, open, close }
 }
 
-/** onClick for a Link to a request or event: peek on a plain click, follow the link otherwise. */
+/**
+ * onClick for a Link to a request or event. A click now opens the page itself (the preview step was one
+ * click too many), so this lets the link do its job; kept so existing links need no change.
+ */
 export function usePeekLink() {
-  const { open } = usePeek()
-  return useCallback((token) => (e) => {
-    if (!isPlainClick(e)) return
-    e.preventDefault()
-    open(token)
-  }, [open])
+  return useCallback(() => () => {}, [])
 }

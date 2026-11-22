@@ -364,13 +364,7 @@ export function Conversation({ request, lastReadAt }) {
   const items = threadItems(request, lists, usersById).filter((it) => !(it.type === 'message' && openIds.has(it.message.id)))
   const isNew = (it) => (it.type === 'message' ? it.message.author : it.who) !== user.id && time(it.at) > time(lastReadAt)
   const listRef = useRef(null)
-  const scrolled = useRef(false)
-  useEffect(() => {
-    if (scrolled.current) return
-    scrolled.current = true
-    const first = document.querySelector('[data-new]')
-    first?.scrollIntoView?.({ block: 'center' })
-  }, [])
+  // The page opens at the top ("Where it is now" first); what is new in the thread is highlighted, not scrolled to.
 
   async function askBd() {
     setError(null)

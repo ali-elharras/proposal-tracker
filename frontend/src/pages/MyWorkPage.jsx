@@ -175,6 +175,8 @@ function MyWork({ subtitle }) {
       ) : (
         <div className="my-work">
           <MorningSummary counts={counts} />
+          <div className="dash-grid">
+          <div className="dash-grid__main">
           {fresh.length > 0 && (
             <Card id="new" title={`New (${fresh.length})`} flush>
               {table(fresh, "What's new", 'New for you')}
@@ -186,7 +188,6 @@ function MyWork({ subtitle }) {
                 rowClassName={(r) => [r.newForYou && 'is-new', isRequestOverdue(r, today) && 'is-overdue'].filter(Boolean).join(' ')} />
             </Card>
           )}
-          <MyTodos />
           {others.total > 0 && (
             <Card id="waiting" title={`Waiting on others (${others.total})`} flush>
               {others.team.length > 0 && <h3 className="table-group-title table-group-title--major">The team</h3>}
@@ -210,13 +211,16 @@ function MyWork({ subtitle }) {
                 <details className="wait-group" open={!folded}>
                   <summary className="table-group-title table-group-title--major wait-group__line">
                     <span className="wait-group__name">The client · {others.client.length}</span>
-                    <span className="muted">Shared or postponed; postponed ones come back to the BD owner on their follow-up date</span>
+                    <span className="muted">Sent or postponed</span>
                   </summary>
                   {table(others.client, "What's needed", 'The client')}
                 </details>
               )}
             </Card>
           )}
+          </div>
+          <div className="dash-grid__side">
+          <MyTodos />
           {finished.length > 0 && (
             <Card title="Recently finished" flush>
               <DataTable caption="Recently finished" rows={finished} rowKey={(r) => r.id} rowHref={(r) => proposalLink(r.id)} rowPeek={(r) => r.id}
@@ -227,6 +231,8 @@ function MyWork({ subtitle }) {
                 ]} />
             </Card>
           )}
+          </div>
+          </div>
         </div>
       )}
     </PageLayout>

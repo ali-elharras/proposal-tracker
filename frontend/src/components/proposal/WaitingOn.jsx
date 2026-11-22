@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
+import useDismiss from '../../lib/useDismiss.js'
 import SidePanel from '../ui/SidePanel.jsx'
+import Icon from '../ui/Icon.jsx'
 import RemindButton from './RemindButton.jsx'
 import { Field, FormAlert, PanelButtons, successText, usePanelForm } from '../crm/formParts.jsx'
 import { useCurrentUser, useLists, useLookups, useProposalRequest, useUsers, useWaitingActions } from '../../data/hooks.js'
-import { optionLabel } from '../../domain/lists.js'
+import { OTHER, optionLabel } from '../../domain/lists.js'
 import { todayISO } from '../../domain/metrics.js'
 import {
   WAITING_NOTE_MAX, WAITING_TEAMS, backTo, canClearWaitingOn, canSetWaitingOn, effectiveWaiting, getTeam, teamPeople,
@@ -178,5 +180,101 @@ function WaitingForm({ request, onClose, onSaved }) {
         )}
       </form>
     </SidePanel>
+  )
+}
+
+/** Who a quick choice waits on: this proposal's BD owner or AM for those teams; anyone in the team otherwise. */
+function defaultPerson(request, teamId) {
+  if (teamId === 'bd') return request.bdOwner ?? ''
+  if (teamId === 'am') return request.assignedAM ?? ''
+  return ''
+}
+
+const QUICK_ORDER = ['client', 'bd', 'am', 'marketing', 'operations', 'management']
+
+/**
+ * "Waiting on" in one click: the name itself opens a short menu of who + why. Picking a reason saves it
+ * straight away (the BD owner / AM of this proposal for those teams, anyone in the team otherwise).
+ * "Other, a date or a note…" opens the full form. Rules and validation are the same as the full form.
+ * children: what the trigger shows (who it waits on now). variant 'button': a "Waiting on" button instead
+ * (next to the main action); hidden for people who may not change it.
+ */
+export function WaitingQuickMenu({ request, onSaved, onMore, children, variant = 'name' }) {
+  const { user, activeRole } = useCurrentUser()
+  const { usersById } = useLookups()
+  const lists = useLists().data
+  const actions = useWaitingActions(request)
+  const can = waitingPermissions(request, { userId: user.id, activeRole }, usersById)
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const ref = useRef(null)
+  const close = useCallback(() => setOpen(false), [])
+  useDismiss(ref, open, close)
+
+  const manual = request.waiting?.team ? request.waiting : null
+  const canSet = can.set.allowed
+  const canClear = Boolean(manual) && can.clear.allowed
+  if (!canSet && !canClear) return variant === 'button' ? null : children
+
+  const run = async (call) => {
+    setBusy(true)
+    setError(null)
+    const result = await call()
+    setBusy(false)
+    if (result?.ok) { setOpen(false); onSaved?.(result, successText(result)) } else setError(result?.error ?? 'It could not be saved.')
+  }
+  const pick = (teamId, reason) => {
+    const values = { team: teamId, userId: defaultPerson(request, teamId), reason, expectedBy: '', note: '' }
+    const { errors } = validateWaitingOn(values, { lists, usersById, today: todayISO() })
+    if (Object.keys(errors).length) { setOpen(false); onMore?.(); return } // needs more than one click: the full form
+    run(() => actions.set(values))
+  }
+  const teams = QUICK_ORDER.map(getTeam).filter(Boolean)
+
+  return (
+    <div className="popover-anchor wait-quick" ref={ref}>
+      <button type="button" className={variant === 'button' ? 'btn' : 'wait-quick__trigger'} aria-haspopup="menu" aria-expanded={open}
+        onClick={() => setOpen((o) => !o)} disabled={busy} aria-busy={busy}>
+        {variant === 'button' ? (busy ? 'Saving…' : 'Waiting on') : children}
+        <Icon name="chevronDown" size={14} className="wait-quick__caret" />
+      </button>
+      {open && (
+        <div className="popover popover--start more-menu wait-quick__menu" role="menu" aria-label="Waiting on">
+          {canSet && teams.map((t) => {
+            const reasons = teamReasons(lists, t.id).filter((r) => r.code !== OTHER)
+            if (!reasons.length) return null
+            const who = t.id === 'bd' || t.id === 'am' ? usersById[defaultPerson(request, t.id)]?.name : null
+            return (
+              <div key={t.id} role="group" aria-label={t.label} className="wait-quick__group">
+                <div className="wait-quick__team">{t.id === 'client' ? 'The client' : t.label}{who ? ` · ${who}` : ''}</div>
+                {reasons.map((r) => {
+                  const current = manual?.team === t.id && manual?.reason === r.code
+                  return (
+                    <button key={r.code} type="button" role="menuitemradio" aria-checked={current}
+                      className={`more-menu__item${current ? ' is-current' : ''}`} onClick={() => pick(t.id, r.code)}>
+                      {r.label}{current ? ' ✓' : ''}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
+          <div className="wait-quick__foot">
+            {canSet && (
+              <button type="button" role="menuitem" className="more-menu__item" onClick={() => { setOpen(false); onMore?.() }}>
+                Other, a date or a note…
+              </button>
+            )}
+            {canClear && (
+              <button type="button" role="menuitem" className="more-menu__item" onClick={() => run(() => actions.clear())}>
+                {canSet ? 'Back to automatic' : `Done — back to ${backTo(request) ?? 'the team'}`}
+              </button>
+            )}
+          </div>
+          {error && <p className="form-field__error wait-quick__error" role="alert">{error}</p>}
+        </div>
+      )}
+    </div>
   )
 }

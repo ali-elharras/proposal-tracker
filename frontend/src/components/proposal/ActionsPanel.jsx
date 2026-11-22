@@ -42,11 +42,6 @@ const YOUR_TURN = {
   resume: 'follow up with the client',
   record_accepted: "record the client's answer (Mark confirmed when the event is on)",
 }
-const DOING = {
-  draft: 'finishing the draft', submitted: 'starting the proposal', in_progress: 'preparing the proposal',
-  awaiting_bd_info: 'answering the Account Manager', ready_for_bd: 'sharing the proposal with the client',
-  shared_with_client: "the client's answer", postponed: 'the client (postponed)', revision_requested: 'starting the revised version',
-}
 
 /**
  * "What do I need to do?": the viewer's next step with one main button (others under "More"), or who it waits on.
@@ -55,7 +50,7 @@ const DOING = {
  * Writes may be async: one pending state blocks double submissions, and success is shown only
  * after the change has been saved.
  */
-export default function ActionsPanel({ request, extras = [] }) {
+export default function ActionsPanel({ request, extras = [], bare = false, idleText = null, waitingButton = null }) {
   const { actions, perform, validate, editable, reload } = useRequestActions(request)
   const { user, activeRole } = useCurrentUser()
   const { usersById, clientsById } = useLookups()
@@ -155,8 +150,8 @@ export default function ActionsPanel({ request, extras = [] }) {
   const set = (field) => (e) =>
     setInput((prev) => ({ ...prev, [field]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
 
-  return (
-    <Card title="Next step">
+  const body = (
+    <>
       {success && (
         <div className="action-feedback action-feedback--success" role="status">
           <Icon name="checkmark" size={16} strokeWidth={2.25} />
@@ -351,7 +346,7 @@ export default function ActionsPanel({ request, extras = [] }) {
             <Link to={editDraftLink(request.id)} className="btn action-edit">Edit draft</Link>
           )}
           <NextStep request={request} allowed={allowed.filter((a) => !IN_COMPOSER.includes(a.action))} onOpen={open}
-            closed={closed} usersById={usersById} viewer={{ userId: user.id, activeRole }} extras={extras} />
+            closed={closed} usersById={usersById} viewer={{ userId: user.id, activeRole }} extras={extras} idleText={idleText} waitingButton={waitingButton} />
         </>
       )}
 
@@ -366,13 +361,15 @@ export default function ActionsPanel({ request, extras = [] }) {
       >
         {selected && (
           <p>
-            {request.id} will change to <StatusBadge kind="proposal" status={selected.to} version={request.version} />. This is recorded in the
+            This proposal will change to <StatusBadge kind="proposal" status={selected.to} version={request.version} />. This is recorded in the
             activity history{selected.opportunity ? ' and may update the linked opportunity' : ''}.
           </p>
         )}
       </ConfirmDialog>
-    </Card>
+    </>
   )
+  // bare: inside the status card at the top of the page (no card of its own).
+  return bare ? <div className="where-now__actions">{body}</div> : <Card title="Actions">{body}</Card>
 }
 
 /** Choices instead of typing: several (checkboxes) for a multi list, one (select) otherwise. */
@@ -412,7 +409,7 @@ function ReasonPicker({ listId, options, value, error, onChange }) {
  * "More" keeps only rare actions (cancel, take back, update details). "Mark confirmed" and
  * "Initially confirmed" are two equal buttons. extras: [{ label, onSelect, visible? }] from the page.
  */
-function NextStep({ request, allowed, onOpen, closed, usersById, viewer, extras }) {
+function NextStep({ request, allowed, onOpen, closed, usersById, viewer, extras, idleText, waitingButton }) {
   const sorted = [...allowed].sort((a, b) => (PRIORITY.indexOf(a.action) + 1 || 99) - (PRIORITY.indexOf(b.action) + 1 || 99))
   const common = sorted.filter((a) => !RARE.includes(a.action))
   const rare = sorted.filter((a) => RARE.includes(a.action))
@@ -445,8 +442,9 @@ function NextStep({ request, allowed, onOpen, closed, usersById, viewer, extras 
   if (!main && !primaryExtra) {
     return (
       <div className="next-step">
-        <p>{who === '—' ? 'Nothing is waiting.' : <>Waiting on <strong>{who}</strong>{DOING[request.status] ? ` — ${DOING[request.status]}` : ''}.</>}</p>
-        {(secondaryButtons.length > 0 || moreMenu) && <div className="next-step__buttons">{secondaryButtons}{moreMenu}</div>}
+        {/* Who it waits on and why are in the panel at the top; here only what this person can do. */}
+        <p className="muted">{idleText ?? (who === '—' ? 'Nothing is waiting.' : 'Nothing for you to do right now.')}</p>
+        {(secondaryButtons.length > 0 || moreMenu || waitingButton) && <div className="next-step__buttons">{waitingButton}{secondaryButtons}{moreMenu}</div>}
       </div>
     )
   }
@@ -468,6 +466,7 @@ function NextStep({ request, allowed, onOpen, closed, usersById, viewer, extras 
         ) : (
           <button type="button" className="btn btn--primary" onClick={primaryExtra.onSelect}>{primaryExtra.label}</button>
         )}
+        {waitingButton}
         {secondaryButtons}
         {moreMenu}
       </div>

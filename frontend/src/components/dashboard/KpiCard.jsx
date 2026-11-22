@@ -36,10 +36,10 @@ export default function KpiCard({ label, value, icon, tone = 'default', delta, n
   )
 
   return to ? (
-    <Link to={to} className="card kpi-card kpi-card--link">
+    <Link to={to} className={`card kpi-card kpi-card--link kpi-card--${tone}`}>
       {body}
     </Link>
   ) : (
-    <div className="card kpi-card">{body}</div>
+    <div className={`card kpi-card kpi-card--${tone}`}>{body}</div>
   )
 }

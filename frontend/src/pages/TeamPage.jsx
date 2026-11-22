@@ -3,7 +3,6 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import AdminTabs from '../components/accounts/AdminTabs.jsx'
 import PageLayout from '../components/layout/PageLayout.jsx'
 import RoleGate from '../components/layout/RoleGate.jsx'
-import Badge from '../components/ui/Badge.jsx'
 import Card from '../components/ui/Card.jsx'
 import DataTable from '../components/ui/DataTable.jsx'
 import Icon from '../components/ui/Icon.jsx'
@@ -77,27 +76,23 @@ function Team() {
                 <span className="person">
                   <Avatar initials={u.initials} tone={u.avatarTone} size="sm" />
                   <span className="stack">
-                    <span><Link to={personLink(u.id)}>{u.name}</Link> <span className="id-chip">{u.id}</span></span>
+                    <span><Link to={personLink(u.id)}>{u.name}</Link></span>
                     <span className="muted">{u.jobTitle ?? '—'}</span>
                   </span>
                 </span>
               ),
             },
-            { key: 'roles', header: 'Roles', nowrap: true, render: (u) => u.roles.map((r) => roleLabel(r)).join(' · ') },
+            { key: 'roles', header: 'Roles', render: (u) => u.roles.map((r) => roleLabel(r)).join(' · ') },
             {
               key: 'brand', header: 'Brand', nowrap: true,
               render: (u) => (u.roles.includes(ROLE.ACCOUNT_MANAGER) && u.brand ? getBrand(u.brand)?.name : <span className="muted">—</span>),
             },
             {
-              key: 'access', header: 'Access', nowrap: true,
+              key: 'access', header: 'Access',
               render: (u) => {
                 const on = PRIVILEGES.filter((p) => privilegesOf(u)[p.id]).map((p) => p.label)
-                return on.length ? on.join(' · ') : <span className="muted">Role only</span>
+                return on.length ? <span className="muted">{on.join(' · ')}</span> : <span className="muted">Role only</span>
               },
-            },
-            {
-              key: 'status', header: 'Status', nowrap: true,
-              render: (u) => (u.active === false ? <Badge tone="neutral">Deactivated</Badge> : <Badge tone="success">Active</Badge>),
             },
           ]}
         />

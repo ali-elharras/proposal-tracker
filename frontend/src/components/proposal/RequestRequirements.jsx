@@ -5,51 +5,53 @@ import { DueDate } from '../dashboard/cells.jsx'
 import { isDeadlinePending, isDraft } from '../../domain/metrics.js'
 import { formatEventDate, formatNumber } from '../../lib/format.js'
 
+/**
+ * The event: the three numbers people look for first (size, date, proposal deadline), then the brief,
+ * its tags, and the specific requirements (shown only when there are some).
+ */
 export default function RequestRequirements({ request }) {
   const pending = isDeadlinePending(request)
   const monthOnly = /^\d{4}-\d{2}$/.test(request.eventDate ?? '')
   const lists = useLists().data
   const tags = (request.briefTags ?? []).map((c) => optionLabel(lists, 'briefTags', c))
   return (
-    <Card title="Event & requirements">
+    <Card title="The event">
+      <dl className="fact-strip">
+        <div className="fact-strip__item">
+          <dt>Participants</dt>
+          <dd className="tabular">{request.participants ? formatNumber(request.participants) : '—'}</dd>
+        </div>
+        <div className="fact-strip__item">
+          <dt>Event date</dt>
+          <dd>
+            {formatEventDate(request.eventDate, request.eventEndDate, request.eventDatePrecision)}
+            {monthOnly && <span className="field__hint">Day not confirmed yet</span>}
+          </dd>
+        </div>
+        <div className="fact-strip__item">
+          <dt>Proposal due</dt>
+          <dd>
+            <DueDate date={request.requiredBy} active={pending} />
+            {!pending && (
+              <span className="field__hint">{isDraft(request) ? 'Counts once submitted' : 'No longer tracked'}</span>
+            )}
+          </dd>
+        </div>
+      </dl>
       <div className="requirements">
         <section>
           <h3 className="section-label">Brief</h3>
           <p className="prose">{request.requirementsSummary || <span className="muted">No brief provided.</span>}</p>
-          {tags.length > 0 && <p className="muted">Tags: {tags.join(' · ')}</p>}
+          {tags.length > 0 && (
+            <ul className="tag-row" aria-label="Tags">{tags.map((t) => <li key={t} className="tag">{t}</li>)}</ul>
+          )}
         </section>
-        <section>
-          <h3 className="section-label">Specific requirements</h3>
-          <p className="prose">
-            {request.specificRequirements || <span className="muted">None recorded.</span>}
-          </p>
-        </section>
-        <dl className="field-list field-list--3">
-          <div className="field">
-            <dt>Participants</dt>
-            <dd className="tabular">{request.participants ? formatNumber(request.participants) : '—'}</dd>
-          </div>
-          <div className="field">
-            <dt>Expected event date</dt>
-            <dd>
-              {formatEventDate(request.eventDate, request.eventEndDate, request.eventDatePrecision)}
-              {monthOnly && <span className="field__hint">Exact day not confirmed yet</span>}
-            </dd>
-          </div>
-          <div className="field">
-            <dt>Proposal deadline</dt>
-            <dd>
-              <DueDate date={request.requiredBy} active={pending} />
-              <span className="field__hint">
-                {pending
-                  ? 'When the AM must send the proposal to BD'
-                  : isDraft(request)
-                    ? 'Applies once the request is submitted'
-                    : 'The AM is no longer working on it, so this deadline is not tracked'}
-              </span>
-            </dd>
-          </div>
-        </dl>
+        {request.specificRequirements && (
+          <section>
+            <h3 className="section-label">Specific requirements</h3>
+            <p className="prose">{request.specificRequirements}</p>
+          </section>
+        )}
       </div>
     </Card>
   )

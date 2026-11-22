@@ -9,6 +9,7 @@ import { useCurrentUser, useEvents, useLists } from '../data/hooks.js'
 import { findNavItem } from '../navigation.js'
 import Tabs from '../components/ui/Tabs.jsx'
 import { FilterBar, FilterMenu } from '../components/ui/Filters.jsx'
+import Toast, { useRouteToast } from '../components/ui/Toast.jsx'
 import useTab from '../lib/useTab.js'
 import { ROLE } from '../domain/roles.js'
 import { BRANDS, getBrand } from '../domain/brands.js'
@@ -55,6 +56,7 @@ export default function EventsPage() {
   const [chosen] = useTab(tabs.map((t) => t.id))
   const { data, isLoading, error } = useEvents()
   const lists = useLists().data
+  const toast = useRouteToast() // e.g. "PR-2026-0012 was deleted permanently."
   const nav = findNavItem('/events')
   const subtitle = usePageDescription(nav)
   const today = data?.today ?? cairoTodayISO()
@@ -126,6 +128,7 @@ export default function EventsPage() {
             emptyMessage={EMPTY_TEXT[section] ?? 'No events here.'} />
         </Card>
       )}
+      <Toast message={toast.message} />
     </PageLayout>
   )
 }

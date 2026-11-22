@@ -114,7 +114,7 @@ function Settings() {
           </Card>
         </div>
         <div className="span-6">
-          <Card title="Proposal stages and statuses" subtitle="The stage is what people see; the detailed status drives the workflow">
+          <Card title="Proposal stages and statuses">
             <ul className="settings-list">
               {stages.map((st) => (
                 <li key={st.id}>

@@ -59,7 +59,7 @@ export default function FacilitatorPage() {
       subtitle={[p.status === 'active' ? 'Active' : 'Inactive', p.brands.map((b) => getBrand(b)?.name).join(' · ')].filter(Boolean).join(' · ')}
       actions={p.canManage ? <MoreMenu items={[{ label: 'Edit details', onSelect: () => setEditing(true) },
         { label: p.status === 'active' ? 'Mark inactive' : 'Mark active', onSelect: toggle }]} /> : null}
-      crumbs={[{ label: 'Facilitators', to: '/facilitators' }, { label: p.name }]}>
+      crumbs={[{ label: 'Facilitators', to: '/facilitators' }]}>
       {editing && <EditFacilitatorPanel facilitator={p} update={f.update} onClose={() => setEditing(false)} />}
       {message && <p className="muted" role="status">{message}</p>}
       <Card>

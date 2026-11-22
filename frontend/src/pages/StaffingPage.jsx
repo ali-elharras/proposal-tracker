@@ -142,7 +142,7 @@ function Ratios({ ratios, setRatio }) {
     setMessage(result.ok ? 'Saved.' : Object.values(result.errors ?? {})[0] ?? result.error)
   }
   return (
-    <Card title="Staffing ratios" subtitle="One facilitator per N participants: shown as a suggestion on each event, never saved by itself">
+    <Card title="Staffing ratios" subtitle="Suggested on each event: one facilitator per N participants">
       {message && <p className="muted" role="status">{message}</p>}
       <ul className="short-list">
         {BRANDS.flatMap((b) => b.services.map((s) => {

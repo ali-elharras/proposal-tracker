@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
-import StatusBadge from '../components/ui/StatusBadge.jsx'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import MoreMenu from '../components/ui/MoreMenu.jsx'
+import DeleteDialog from '../components/DeleteDialog.jsx'
 import BrandTag from '../components/ui/BrandTag.jsx'
 import Icon from '../components/ui/Icon.jsx'
 import PageLayout from '../components/layout/PageLayout.jsx'
@@ -14,19 +15,20 @@ import ProposalFiles from '../components/proposal/ProposalFiles.jsx'
 import ActivityTimeline from '../components/proposal/ActivityTimeline.jsx'
 import LinkedOpportunity from '../components/proposal/LinkedOpportunity.jsx'
 import ActionsPanel from '../components/proposal/ActionsPanel.jsx'
-import { useCurrentUser, useLookups, useMarkRead, useProposalRequest } from '../data/hooks.js'
-import { WaitingBar, WaitingOnPanel, waitingPermissions } from '../components/proposal/WaitingOn.jsx'
-import { Conversation, DetailsBanner, OpenCards, ProgressSteps, UpdateDetailsPanel } from '../components/proposal/RequestFlow.jsx'
+import { useCurrentUser, useDelete, useLookups, useMarkRead, useProposalRequest } from '../data/hooks.js'
+import { WaitingOnPanel, WaitingQuickMenu } from '../components/proposal/WaitingOn.jsx'
+import WhereNow from '../components/proposal/WhereNow.jsx'
+import { Conversation, DetailsBanner, OpenCards, UpdateDetailsPanel } from '../components/proposal/RequestFlow.jsx'
 import SidePanel from '../components/ui/SidePanel.jsx'
 import { CorrectStatusPanel } from '../components/proposal/DataFixes.jsx'
 import { canCorrectStatus } from '../domain/corrections.js'
 import { canUpdateDetails } from '../domain/conversation.js'
 import { ROLE } from '../domain/roles.js'
-import { PROPOSAL_STATUS as PS } from '../domain/status.js'
+import { PROPOSAL_STATUS as PS, getStatus } from '../domain/status.js'
 import Toast, { useRouteToast } from '../components/ui/Toast.jsx'
 import { API_MODE } from '../data/source.js'
 import { canViewRequest } from '../domain/proposals.js'
-import { getBrand, serviceLabel } from '../domain/brands.js'
+import { serviceLabel } from '../domain/brands.js'
 import { SkeletonRequest } from '../components/ui/Skeleton.jsx'
 import { LinkedTodos } from '../components/Todos.jsx'
 
@@ -67,6 +69,9 @@ function ProposalDetail({ id }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [correctOpen, setCorrectOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const remove = useDelete()
+  const navigate = useNavigate()
   // When this person last opened it (captured once, so what was new stays highlighted for this visit).
   const [lastReadAt, setLastReadAt] = useState(undefined)
   const markRead = useMarkRead(id)
@@ -78,7 +83,7 @@ function ProposalDetail({ id }) {
   const toast = useRouteToast()
 
   if (!request && isLoading) {
-    return <PageLayout title={id} crumbs={[{ label: 'Proposals', to: '/proposals' }, { label: id }]}><SkeletonRequest /></PageLayout>
+    return <PageLayout title="Proposal" crumbs={[{ label: 'Proposals', to: '/proposals' }]}><SkeletonRequest /></PageLayout>
   }
   if (error && !request) {
     return (
@@ -95,9 +100,8 @@ function ProposalDetail({ id }) {
   // API mode: the linked opportunity comes with the request.
   const opportunity = request.opportunity ?? (request.opportunityId ? opportunitiesById[request.opportunityId] : null)
   const viewer = { userId: user.id, activeRole }
-  const waiting = waitingPermissions(request, viewer, usersById)
   const details = request.conversationPermissions?.updateDetails ?? canUpdateDetails(request, viewer, usersById)
-  // The AM while preparing: "Upload proposal" and "Set waiting on" are visible buttons, not in "More".
+  // The AM while preparing: "Upload proposal" is a visible button, not in "More" (waiting on: click the name).
   const preparing = activeRole === ROLE.ACCOUNT_MANAGER && request.assignedAM === user.id
     && [PS.SUBMITTED, PS.IN_PROGRESS, PS.REVISION_REQUESTED].includes(request.status)
   const uploadAllowed = request.upload?.allowed ?? false
@@ -110,17 +114,14 @@ function ProposalDetail({ id }) {
   return (
     <PageLayout
       title={client?.name ?? request.clientName ?? 'Unknown client'}
-      crumbs={[{ label: 'Proposals', to: '/proposals' }, { label: request.id }]}
+      crumbs={[{ label: 'Proposals', to: '/proposals' }]}
       meta={(
         <>
-          <StatusBadge kind="proposal" status={request.status} version={request.version} />
-          <span className="meta-sep" aria-hidden="true" />
+          {/* Status and who it waits on are in the panel right below; the header just names it. */}
           <BrandTag brand={request.brand} />
           <span className="muted">{serviceLabel(request.brand, request.service)}</span>
           {request.eventName && <><span className="meta-sep" aria-hidden="true" /><span>{request.eventName}</span></>}
-          <span className="meta-sep" aria-hidden="true" />
-          <span className="muted tabular" title={getBrand(request.brand)?.name}>{request.id} · v{request.version}</span>
-          {request.imported && <Badge tone="neutral">Imported</Badge>}
+          {request.version > 1 && <><span className="meta-sep" aria-hidden="true" /><span className="muted">Version {request.version}</span></>}
           {request.needsReview && <Badge tone="info">Needs review</Badge>}
         </>
       )}
@@ -129,6 +130,9 @@ function ProposalDetail({ id }) {
           <button type="button" className="btn btn--ghost" onClick={() => setHistoryOpen(true)}>
             <Icon name="clock" size={16} /> History
           </button>
+          {request.canDelete?.allowed && remove.available && (
+            <MoreMenu items={[{ label: 'Delete permanently', tone: 'danger', onSelect: () => setDeleting(true) }]} />
+          )}
           {request.status === PS.ACCEPTED && <Link to={`/events/${encodeURIComponent(request.id)}`} className="btn btn--primary">Open the event</Link>}
         </>
       )}
@@ -142,33 +146,38 @@ function ProposalDetail({ id }) {
           </span>
         </div>
       )}
-      <LinkedTodos kind="request" id={request.id} />
 
       {request.status === PS.ACCEPTED && (
         <p className="details-banner">This proposal is now an event. <Link to={`/events/${encodeURIComponent(request.id)}`}>Open the event page</Link></p>
       )}
-      {/* Who it is waiting on, impossible to miss: directly under the title, with Change and Remind. */}
-      <WaitingBar request={request} onChange={() => setWaitingOpen(true)} canChange={waiting.set.allowed || waiting.clear.allowed} />
-      {/* The progress bar; then two columns, nothing folded away. */}
-      <ProgressSteps request={request} />
+      {/* The status card: where it is, who it waits on (one click to change), why, and this person's buttons. */}
+      <WhereNow request={request}
+        onMore={() => setWaitingOpen(true)}
+        onSaved={(_r, text) => toast.show(text)}
+        actions={(
+          // Remount per viewer so one person's form or success message never shows for another.
+          <ActionsPanel key={`${user.id}:${activeRole}`} request={request} bare
+            idleText={getStatus('proposal', request.status).nextStep ?? null}
+            waitingButton={<WaitingQuickMenu request={request} variant="button"
+              onMore={() => setWaitingOpen(true)} onSaved={(_r, text) => toast.show(text)} />}
+            extras={[
+              ...(preparing && uploadAllowed ? [{ label: 'Upload proposal', onSelect: openUpload, visible: true }] : []),
+              ...(details.allowed ? [{ label: 'Update details', onSelect: () => setDetailsOpen(true) }] : []),
+              ...((request.correctStatus ?? canCorrectStatus(request, viewer, usersById)).allowed
+                ? [{ label: 'Correct status (data fix)', onSelect: () => setCorrectOpen(true) }] : []),
+            ]} />
+        )} />
       <DetailsBanner key={`banner:${user.id}:${activeRole}`} request={request} />
-      <div className="request-columns">
+      <div className="request-columns request-columns--details-first">
         <div className="request-columns__left">
           <RequestRequirements request={request} />
-          <RequestOverview request={request} client={client} usersById={usersById} />
           <ProposalFiles request={request} usersById={usersById} />
           <ProposalVersions request={request} usersById={usersById} />
+          <RequestOverview request={request} client={client} usersById={usersById} />
           <LinkedOpportunity opportunity={opportunity} client={client} usersById={usersById} />
         </div>
         <div className="request-columns__right">
-          {/* Remount per viewer so one person's form or success message never shows for another. */}
-          <ActionsPanel key={`${user.id}:${activeRole}`} request={request} extras={[
-            ...(preparing && uploadAllowed ? [{ label: 'Upload proposal', onSelect: openUpload, visible: true }] : []),
-            ...(preparing && waiting.set.allowed ? [{ label: 'Set waiting on', onSelect: () => setWaitingOpen(true), visible: true }] : []),
-            ...(details.allowed ? [{ label: 'Update details', onSelect: () => setDetailsOpen(true) }] : []),
-            ...((request.correctStatus ?? canCorrectStatus(request, viewer, usersById)).allowed
-              ? [{ label: 'Correct status (data fix)', onSelect: () => setCorrectOpen(true) }] : []),
-          ]} />
+          <LinkedTodos kind="request" id={request.id} label={client?.name ?? request.clientName ?? request.id} />
           <OpenCards key={`cards:${user.id}:${activeRole}`} request={request} lastReadAt={lastReadAt} />
           <Conversation key={`thread:${user.id}:${activeRole}`} request={request} lastReadAt={lastReadAt} />
         </div>
@@ -190,6 +199,15 @@ function ProposalDetail({ id }) {
         <WaitingOnPanel request={request} onClose={() => setWaitingOpen(false)}
           onSaved={(_r, text) => { setWaitingOpen(false); toast.show(text) }} />
       )}
+      <DeleteDialog open={deleting} title={`Delete ${request.id} permanently?`} name={request.id}
+        items={[
+          `the proposal ${request.id} for ${client?.name ?? request.clientName ?? 'this client'}`,
+          'its full history, conversation and proposal files',
+          request.status === PS.ACCEPTED ? 'its event, with the facilitators assigned to it' : null,
+          request.opportunityId ? 'its opportunity, when no other proposal uses it' : null,
+        ]}
+        onDelete={() => remove.request(request)} onCancel={() => setDeleting(false)}
+        onDone={(result) => navigate('/proposals', { state: { toast: result.message } })} />
       <Toast message={toast.message} />
     </PageLayout>
   )

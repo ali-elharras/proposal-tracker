@@ -123,7 +123,7 @@ export default function ClientsPage() {
                 key: 'name', header: 'Client',
                 render: (c) => (
                   <span className="stack">
-                    <span><Link to={clientLink(c.id)}>{c.name}</Link> <span className="id-chip">{c.id}</span></span>
+                    <span><Link to={clientLink(c.id)}>{c.name}</Link></span>
                     <span className="muted">{CLIENT_TYPES[c.type]?.label}{c.city ? ` · ${optionLabel(lists, 'cities', c.city)}` : ''}</span>
                   </span>
                 ),

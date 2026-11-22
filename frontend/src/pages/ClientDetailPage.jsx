@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { fromPreviousLink } from '../components/RadarSection.jsx'
 import { LinkedTodos } from '../components/Todos.jsx'
+import DeleteDialog from '../components/DeleteDialog.jsx'
 import PageLayout from '../components/layout/PageLayout.jsx'
 import Badge from '../components/ui/Badge.jsx'
 import Card from '../components/ui/Card.jsx'
@@ -20,7 +21,7 @@ import OpportunityForm from '../components/crm/OpportunityForm.jsx'
 import TransferOwnerForm from '../components/crm/TransferOwnerForm.jsx'
 import { ClientHistoryList, brandService } from '../components/crm/HistoryList.jsx'
 import { successText } from '../components/crm/formParts.jsx'
-import { useAllRequests, useClient, useClientActions, useClientHistory, useCurrentUser, useLists, useLookups, useOpportunities, useRadar } from '../data/hooks.js'
+import { useAllRequests, useClient, useClientActions, useClientHistory, useCurrentUser, useDelete, useLists, useLookups, useOpportunities, useRadar } from '../data/hooks.js'
 import { optionLabel } from '../domain/lists.js'
 import { getBrand, serviceLabel } from '../domain/brands.js'
 import { CLIENT_TYPES } from '../domain/catalog.js'
@@ -57,6 +58,8 @@ export default function ClientDetailPage() {
   const radar = useRadar()
   const [panel, setPanel] = useState(null) // { kind: 'edit' | 'contact' | 'opportunity' | 'transfer', contact? }
   const [archiving, setArchiving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const remove = useDelete()
   const [archiveError, setArchiveError] = useState(null)
   const [archiveBusy, setArchiveBusy] = useState(false)
 
@@ -105,7 +108,9 @@ export default function ClientDetailPage() {
   const more = [
     ...(can.transfer.allowed ? [{ label: 'Transfer owner', onSelect: () => setPanel({ kind: 'transfer' }) }] : []),
     ...(can.archive.allowed ? [{ label: 'Archive client', tone: 'danger', onSelect: () => { setArchiveError(null); setArchiving(true) } }] : []),
+    ...(client.canDelete?.allowed ? [{ label: 'Delete permanently', tone: 'danger', onSelect: () => setDeleting(true) }] : []),
   ]
+  const impact = client.deleteImpact ?? { proposals: 0, events: 0, contacts: 0 }
   // One click to a request for this client, already chosen (the server checks again who may).
   const canRequest = createRequests.allowed && !client.archivedAt && (activeRole === ROLE.COMMERCIAL_HEAD || client.owner === user.id)
   const newProposal = canRequest && (
@@ -129,7 +134,7 @@ export default function ClientDetailPage() {
   const oppColumns = [
     {
       key: 'service', header: 'Opportunity',
-      render: (o) => <span>{pages?.opportunities ? <Link to={opportunityLink(o.id)}>{brandService(o)}</Link> : brandService(o)} <span className="id-chip">{o.id}</span></span>,
+      render: (o) => <span>{pages?.opportunities ? <Link to={opportunityLink(o.id)}>{brandService(o)}</Link> : brandService(o)}</span>,
     },
     { key: 'stage', header: 'Stage', nowrap: true, render: (o) => <StatusBadge kind="opportunity" status={o.stage} /> },
     { key: 'value', header: 'Est. value', align: 'end', nowrap: true, render: (o) => <span className="tabular">{formatCurrency(o.estimatedValue)}</span> },
@@ -138,8 +143,8 @@ export default function ClientDetailPage() {
 
   return (
     <PageLayout title={client.name} subtitle={`${CLIENT_TYPES[client.type]?.label ?? client.type}${client.city ? ` · ${optionLabel(lists, 'cities', client.city)}` : ''}`}
-      actions={headerActions} crumbs={[{ label: 'Clients', to: '/clients' }, { label: client.id }]}>
-      <LinkedTodos kind="client" id={client.id} />
+      actions={headerActions} crumbs={[{ label: 'Clients', to: '/clients' }]}>
+      <LinkedTodos kind="client" id={client.id} label={client.name} />
       {(radar.data?.items ?? []).filter((i) => i.clientId === client.id).map((i) => (
         <p key={i.signal} className="radar-line">Likely to book soon: {i.sentence}{' '}
           <Link to={fromPreviousLink(i)}>Create request from previous</Link></p>
@@ -246,7 +251,7 @@ export default function ClientDetailPage() {
       )}
 
       {tab === 'history' && (
-        <Card title="History" subtitle="Every change, newest first">
+        <Card title="History">
           <ClientHistoryList items={historyItems} usersById={usersById} empty={history.isLoading ? 'Loading…' : 'No changes recorded yet.'} />
         </Card>
       )}
@@ -269,6 +274,14 @@ export default function ClientDetailPage() {
         {archiveError && <p className="form-field__error" role="alert">{archiveError}</p>}
       </ConfirmDialog>
 
+      <DeleteDialog open={deleting} title={`Delete ${client.name} permanently?`} name={client.name}
+        items={[
+          `${client.name}, its contacts (${impact.contacts}) and its history`,
+          `its ${impact.proposals} ${impact.proposals === 1 ? 'proposal' : 'proposals'}${impact.events ? `, including ${impact.events} ${impact.events === 1 ? 'event' : 'events'}` : ''}, with their messages and files`,
+          'its opportunities',
+        ]}
+        onDelete={() => remove.client(client)} onCancel={() => setDeleting(false)}
+        onDone={(result) => navigate('/clients', { state: { toast: result.message } })} />
       <Toast message={toast.message} />
     </PageLayout>
   )

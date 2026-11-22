@@ -99,7 +99,7 @@ export default function PersonPage() {
     <PageLayout
       title={person.name}
       subtitle={person.jobTitle ?? 'No job title'}
-      crumbs={[{ label: 'Team & Users', to: '/team' }, { label: person.name }]}
+      crumbs={[{ label: 'Team & Users', to: '/team' }]}
       actions={can.edit.allowed ? (
         <>
           <MoreMenu items={more} />
@@ -111,7 +111,6 @@ export default function PersonPage() {
         <span>{person.roles.map((r) => roleLabel(r, person)).join(' · ')}</span>
         <a href={`mailto:${person.email}`}>{person.email}</a>
         {person.active ? <Badge tone="success">Active</Badge> : <Badge tone="neutral">Deactivated</Badge>}
-        <span className="id-chip">{person.id}</span>
       </div>
       {blocked && <p className="muted">{blocked}</p>}
 
@@ -123,7 +122,7 @@ export default function PersonPage() {
       {tab === 'overview' && (
         <div className="dash-grid detail-grid">
           <div className="span-8 detail-col">
-            <Card title="Access" subtitle="What this person can see beyond their role">
+            <Card title="Access" subtitle="Beyond their role">
               <ul className="access-list">
                 {PRIVILEGES.map((p) => (
                   <li key={p.id}>
@@ -153,7 +152,7 @@ export default function PersonPage() {
       )}
 
       {tab === 'history' && (
-        <Card title="History" subtitle="Every change to this account, newest first">
+        <Card title="History">
           <AccountHistoryList items={person.history ?? []} usersById={usersById} />
         </Card>
       )}

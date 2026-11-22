@@ -61,3 +61,58 @@ def test_update_details_refuses_moving_the_event_before_the_unchanged_deadline(a
     assert error(moved)["fields"] == {"eventDate": "The event must start after the proposal deadline. Change the deadline too."}
     ok(api.patch(f"/api/proposal-requests/{rid}/details", headers=AHMED,
                  json={"eventDate": future(5), "requiredBy": future(2), "expectedRowVersion": v}))
+
+
+# ---------- Permanent delete (requests, events, clients) ----------
+
+def test_the_bd_owner_deletes_a_request_and_everything_attached_goes_for_good(api, engine):
+    from sqlalchemy import text
+    from .conftest import SHERINE
+    rid = _submitted(api)
+    ok(upload(api, rid, MD_AM, data=sample_pdf()))
+    ok(api.post(f"/api/proposal-requests/{rid}/comments", headers=AHMED, json={"kind": "comment", "body": "hello"}))
+    assert detail(api, rid, AHMED)["canDelete"]["allowed"] is True
+    assert detail(api, rid, MD_AM)["canDelete"]["allowed"] is False, "the AM cannot delete it"
+    other = api.post(f"/api/proposal-requests/{rid}/delete", headers=SHERINE,
+                     json={"expectedRowVersion": detail(api, rid, NOHA)["rowVersion"]})
+    assert other.status_code == 403, "another BD sees it but cannot delete it"
+    am = api.post(f"/api/proposal-requests/{rid}/delete", headers=MD_AM,
+                  json={"expectedRowVersion": detail(api, rid, MD_AM)["rowVersion"]})
+    assert am.status_code == 403
+    done = ok(api.post(f"/api/proposal-requests/{rid}/delete", headers=AHMED,
+                       json={"expectedRowVersion": detail(api, rid, AHMED)["rowVersion"]}))
+    assert done["deleted"] == rid
+    assert api.get(f"/api/proposal-requests/{rid}", headers=NOHA).status_code == 404
+    with engine.connect() as conn:
+        for table in ("request_status_history", "request_comments", "proposal_files"):
+            assert conn.execute(text(f"SELECT count(*) FROM {table} WHERE request_id = :r"), {"r": rid}).scalar() == 0
+        # History is still append-only afterwards: the guard was lifted for that one delete only.
+        import pytest
+        from sqlalchemy.exc import IntegrityError, OperationalError
+        with pytest.raises((IntegrityError, OperationalError), match="append-only"):
+            conn.execute(text("DELETE FROM request_status_history WHERE id = (SELECT min(id) FROM request_status_history)"))
+        conn.rollback()
+
+
+def test_the_head_deletes_a_client_with_its_proposals_events_and_contacts(api, engine):
+    from sqlalchemy import text
+    rid = _submitted(api)  # a request for CL-0008
+    client = api.get(f"/api/clients/{cl(8)}", headers=NOHA).json()
+    assert client["canDelete"]["allowed"] is True and client["deleteImpact"]["proposals"] >= 1
+    stale = api.post(f"/api/clients/{cl(8)}/delete", headers=NOHA, json={"expectedRowVersion": client["rowVersion"] - 1})
+    assert stale.status_code == 409
+    ok(api.post(f"/api/clients/{cl(8)}/delete", headers=NOHA, json={"expectedRowVersion": client["rowVersion"]}))
+    assert api.get(f"/api/clients/{cl(8)}", headers=NOHA).status_code == 404
+    assert api.get(f"/api/proposal-requests/{rid}", headers=NOHA).status_code == 404
+    with engine.connect() as conn:
+        for table, col in (("client_contacts", "client_id"), ("opportunities", "client_id"), ("proposal_requests", "client_id"),
+                           ("client_history", "client_id")):
+            assert conn.execute(text(f"SELECT count(*) FROM {table} WHERE {col} = :c"), {"c": cl(8)}).scalar() == 0
+
+
+def test_a_draft_is_deleted_only_by_its_creator(api):
+    rid = ok(create(api, AHMED, clientId=cl(8), brand="teamup", service="team_building"))["request"]["id"]
+    noha = api.post(f"/api/proposal-requests/{rid}/delete", headers=NOHA, json={"expectedRowVersion": 1})
+    assert noha.status_code == 404, "someone else's draft stays invisible"
+    ok(api.post(f"/api/proposal-requests/{rid}/delete", headers=AHMED,
+                json={"expectedRowVersion": detail(api, rid, AHMED)["rowVersion"]}))

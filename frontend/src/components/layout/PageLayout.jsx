@@ -54,7 +54,8 @@ export default function PageLayout({ title, subtitle, meta, actions, crumbs, chi
       <div className="page-header">
         <div className="page-header__text">
           <h1 className="page-header__title">{title}</h1>
-          {subtitle && <p className="page-header__subtitle">{subtitle}</p>}
+          {/* Menu pages need no explanation line; pages inside them keep theirs (e.g. "School · New Cairo"). */}
+          {subtitle && (nested || crumbs) && <p className="page-header__subtitle">{subtitle}</p>}
           {meta && <div className="page-header__meta">{meta}</div>}
         </div>
         {actions && <div className="page-header__actions">{actions}</div>}

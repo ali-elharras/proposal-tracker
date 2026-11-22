@@ -50,6 +50,7 @@ export const useReminders = impl.useReminders
 export const useMarkRead = impl.useMarkRead
 export const useNewCount = impl.useNewCount
 export const useDataFixes = impl.useDataFixes
+export const useDelete = impl.useDelete
 
 /**
  * Tasks are not in the backend yet, so they are SAMPLE data from the demo seed (labelled "sample

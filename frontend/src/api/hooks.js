@@ -668,3 +668,17 @@ export function useScreen() {
   }, [])
   return useResource((signal) => api.get('/api/screen', undefined, { signal }), `screen:${tick}`)
 }
+
+
+/**
+ * Permanent delete (whoever may edit it; the server checks): a request or event, or a client with all of
+ * theirs. -> { ok, message } | failure. Lists refetch after a success.
+ */
+export function useDelete() {
+  const write = useWrite()
+  const request = useCallback((r) => write(() => api.post(`/api/proposal-requests/${encodeURIComponent(r.id)}/delete`,
+    { expectedRowVersion: r.rowVersion })), [write])
+  const client = useCallback((c) => write(() => api.post(`/api/clients/${encodeURIComponent(c.id)}/delete`,
+    { expectedRowVersion: c.rowVersion })), [write])
+  return { available: true, request, client }
+}

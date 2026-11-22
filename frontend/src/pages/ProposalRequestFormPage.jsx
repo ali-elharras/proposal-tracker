@@ -376,7 +376,7 @@ function RequestForm({ draftId, draft, form, reloadDraft, previous = null }) {
               </div>
             </Card>
 
-            <Card title="Event & proposal deadline" subtitle="The event date is when the event happens. The proposal deadline is when the AM must send the proposal to BD.">
+            <Card title="Dates and size">
               <div className="form-grid">
                 <Field id="f-eventDate" label="Event date" error={errors.eventDate}
                   hint={values.eventDatePrecision === 'month' ? 'Month and year only; the exact day is not known yet.'

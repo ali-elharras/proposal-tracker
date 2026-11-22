@@ -99,6 +99,7 @@ def test_no_delete_routes_anywhere(api):
         ("/api/clients/{client_id}/contacts", "POST"),
         ("/api/clients/{client_id}/contacts/{contact_id}", "PATCH"),
         ("/api/clients/{client_id}/contacts/{contact_id}/archive", "POST"),
+        ("/api/clients/{client_id}/delete", "POST"),  # permanent delete (business request, Nov 2026)
         ("/api/clients/{client_id}/transfer", "POST"),
         ("/api/events/{event_id}/cancel", "POST"),
         ("/api/events/{event_id}/comments", "POST"),
@@ -126,6 +127,7 @@ def test_no_delete_routes_anywhere(api):
         ("/api/proposal-requests/{request_id}/actions", "POST"),
         ("/api/proposal-requests/{request_id}/comments", "POST"),
         ("/api/proposal-requests/{request_id}/correct-status", "POST"),
+        ("/api/proposal-requests/{request_id}/delete", "POST"),  # permanent delete (business request, Nov 2026)
         ("/api/proposal-requests/{request_id}/details", "PATCH"),
         ("/api/proposal-requests/{request_id}/details/seen", "POST"),
         ("/api/proposal-requests/{request_id}/files", "POST"),

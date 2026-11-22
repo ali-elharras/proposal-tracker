@@ -27,7 +27,7 @@ export default function OccasionsEditor() {
   }
   const set = (id, key) => (e) => setDraft((x) => ({ ...x, [id]: { ...(x[id] ?? {}), [key]: e.target.value } }))
   return (
-    <Card title="Occasions" subtitle="Start and end dates for each year: the radar uses them for “likely to book soon”">
+    <Card title="Occasions" subtitle="Dates per year, used for “likely to book soon”">
       {message && <p className="muted" role="status">{message}</p>}
       <ul className="short-list short-list--actions">
         {occasions.items.map((o) => (

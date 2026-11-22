@@ -25,6 +25,7 @@ from ..domain import access, rules, tracker
 from ..domain import conversation
 from ..domain import waiting as waiting_rules
 from ..domain import corrections
+from ..domain import deletion as deletion_rules
 from ..domain import events as event_rules
 from ..domain.access import can_see_request
 from ..domain.lists import option_label
@@ -40,6 +41,7 @@ from ..schemas import event_date_out
 from ..services import proposal_files as files_service
 from ..services import proposal_requests as service
 from ..services import corrections as corrections_service
+from ..services import deletion as deletion_service
 from ..services import notifications as notifications_service
 from ..services.lists import load_lists
 
@@ -277,6 +279,7 @@ def _detail(db: Session, row: ProposalRequest, actor: Actor, now: datetime) -> d
         "conversationPermissions": {"ask": conversation.can_ask_question(view, actor, users),
                                     "updateDetails": conversation.can_update_details(view, actor, users)},
         "correctStatus": corrections.can_correct_status(view, actor, users),
+        "canDelete": deletion_rules.can_delete_request(view, actor, users),
         "waitingPermissions": {"set": waiting_rules.can_set_waiting_on(view, actor, users),
                                "clear": waiting_rules.can_clear_waiting_on(view, actor, users)},
         "upload": upload_target(view, actor, users),
@@ -845,3 +848,19 @@ def upload_past_file(request_id: str, request: Request, actor: Actor = Depends(g
     db.expire_all()
     return {"request": _detail(db, _load_visible(db, request_id, actor), actor, now), "message": "Proposal file added.",
             "warnings": []}
+
+
+# ---------- Delete (permanent) ----------
+
+@router.post("/{request_id}/delete")
+def delete_request(request_id: str, body: WaitingClearIn, request: Request, actor: Actor = Depends(get_current_actor),
+                   db: Session = Depends(get_db)):
+    """Deletes the request (or event) and everything attached, for good. Whoever may edit it (domain/deletion.py)."""
+    row = service.load_for_write(db, request_id, actor, body.expected_row_version)
+    allowed = deletion_rules.can_delete_request(request_from_orm(row), actor, _users(db))
+    if not allowed["allowed"]:
+        raise forbidden(allowed["reason"])
+    done = deletion_service.delete_request(db, row)
+    db.commit()
+    deletion_service.delete_files(request.app.state.storage, done["files"])
+    return {"deleted": request_id, "message": f"{request_id} was deleted permanently."}

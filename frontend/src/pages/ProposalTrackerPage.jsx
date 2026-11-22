@@ -19,7 +19,7 @@ import { usePageDescription } from './PlaceholderPage.jsx'
 import { useCurrentUser, useLookups, useTracker, useUsers } from '../data/hooks.js'
 import { API_MODE } from '../data/source.js'
 import { findNavItem, labelFor } from '../navigation.js'
-import { BRANDS, getBrand } from '../domain/brands.js'
+import { BRANDS } from '../domain/brands.js'
 import { ROLE } from '../domain/roles.js'
 import { isClientOwnerKind } from '../domain/access.js'
 import { stageList, statusList } from '../domain/status.js'
@@ -29,11 +29,12 @@ import {
 } from '../domain/tracker.js'
 import useTab from '../lib/useTab.js'
 import useRememberedFilters from '../lib/useRememberedFilters.js'
-import { WAITING_CHIPS, effectiveWaiting, groupByWaiting, viewerPill, waitingDays, waitingLabel } from '../domain/waiting.js'
+import { WAITING_CHIPS, effectiveWaiting, groupByWaiting } from '../domain/waiting.js'
 import { rowMarkers } from '../domain/conversation.js'
 import { todayISO } from '../domain/metrics.js'
-import StatusPill, { RowMarkers } from '../components/ui/StatusPill.jsx'
-import { WaitingBar, WaitingOnPanel, waitingPermissions } from '../components/proposal/WaitingOn.jsx'
+import { RowMarkers } from '../components/ui/StatusPill.jsx'
+import { WaitingOnPanel, waitingPermissions } from '../components/proposal/WaitingOn.jsx'
+import { PipelineBar, WaitingCell } from '../components/proposal/WhereNow.jsx'
 import Toast, { useRouteToast } from '../components/ui/Toast.jsx'
 import { newRequestLink } from '../lib/links.js'
 
@@ -45,8 +46,8 @@ const daysText = (n) => (n === null ? '' : n === 0 ? 'today' : n === 1 ? '1 day'
 /** Who it is waiting on (the same words as the request page's bar); a button for people who may change it. */
 function WaitingOn({ row, usersById, viewer, onOpen }) {
   const w = effectiveWaiting(row.request)
-  if (!w) return <span className="muted">—</span>
-  const content = <WaitingBar request={row.request} small />
+  const content = <WaitingCell request={row.request} />
+  if (!w) return content
   const can = waitingPermissions(row.request, viewer, usersById)
   if (!can.set.allowed && !can.clear.allowed) return content
   return (
@@ -57,16 +58,6 @@ function WaitingOn({ row, usersById, viewer, onOpen }) {
   )
 }
 
-function RequestCell({ row }) {
-  return (
-    <span className="stack">
-      <Link to={row.href} onClick={(e) => e.stopPropagation()}>{row.id}</Link>
-      {row.needsMyAction && <span className="tracker__action-flag">Needs my action</span>}
-      {row.opensEditor && <span className="muted">Opens editor</span>}
-    </span>
-  )
-}
-
 /** Small-screen card for one request. */
 function RequestCard({ row, usersById }) {
   const r = row.request
@@ -74,16 +65,14 @@ function RequestCard({ row, usersById }) {
     <li>
       <Link to={row.href} className={`tracker-card${row.deadlineState === 'overdue' ? ' is-overdue' : ''}`}>
         <div className="tracker-card__top">
-          <strong className="tabular">{row.id}</strong>
+          <span className="tracker-card__client"><ClientEvent name={row.clientName} eventName={r.eventName} /></span>
           <StatusBadge kind="proposal" status={r.status} version={r.version} compact />
         </div>
-        <div className="tracker-card__client"><ClientEvent name={row.clientName} eventName={r.eventName} /></div>
-        {row.subLabel && <div className="tracker-card__sub">{row.subLabel}</div>}
         <div className="muted">{row.brandName} · {row.serviceName} · Event {row.eventDateLabel}</div>
-        {row.statusHint && <div className="muted">{row.statusHint}</div>}
+        <PipelineBar request={r} />
         <div className="tracker-card__meta">
+          <WaitingCell request={r} />
           <span>Deadline: <DueDate date={r.requiredBy} active={row.deadlineActive} /></span>
-          <span>{effectiveWaiting(r) ? `Waiting on ${waitingLabel(effectiveWaiting(r), usersById)}` : 'Closed'}</span>
         </div>
         {row.needsMyAction && <span className="tracker__action-flag">Needs my action</span>}
       </Link>
@@ -165,74 +154,31 @@ export default function ProposalTrackerPage() {
     setParams(next, { replace: true })
   }
 
-  // Tracking (Noha, Doaa, Tony): where each proposal is now; no actions here.
-  const trackingColumns = [
+  // Every role reads the same three answers per row: where it is in the pipeline, who it is waiting on
+  // (and for how long), and why. Noha and the Executives see it grouped by stage by default.
+  const columns = [
     {
-      key: 'client', header: 'Client · Event · Brand',
+      key: 'client', header: 'Client · Event',
       render: (row) => (
         <span className="stack">
-          <span>{row.request.newForYou && <span className="new-dot" aria-label="New for you" />}
+          <span className="cell-client">{row.request.newForYou && <span className="new-dot" aria-label="New for you" />}
             <ClientEvent name={row.clientName} eventName={row.request.eventName} /></span>
-          <BrandTag brand={row.request.brand} muted />
+          <span className="muted cell-meta"><BrandTag brand={row.request.brand} muted /> · {row.serviceName}</span>
+          {row.request.newForYou && <span className="new-line">{row.request.newForYou.line}</span>}
+          <RowMarkers markers={rowMarkers(row.request, viewer)} />
+          {row.needsMyAction && <span className="tracker__action-flag">Needs my action</span>}
         </span>
       ),
     },
-    {
-      // One column: who it is waiting on and since when; Overdue / Your turn / results shown as a pill above it.
-      key: 'status', header: 'Status · waiting on',
-      render: (row) => {
-        const pill = viewerPill(row.request, viewer, usersById, todayISO())
-        return (
-          <span className="stack stack--gap">
-            {pill.kind !== 'waiting' && <StatusPill pill={pill} request={row.request} />}
-            <WaitingBar request={row.request} small />
-          </span>
-        )
-      },
-    },
+    { key: 'where', header: 'Where it is', nowrap: true, render: (row) => <PipelineBar request={row.request} /> },
+    { key: 'waiting', header: 'Waiting on', render: (row) => <WaitingOn row={row} usersById={usersById} viewer={viewer} onOpen={setWaitingFor} /> },
     { key: 'deadline', header: 'Deadline', nowrap: true, render: (row) => <DueDate date={row.request.requiredBy} active={row.deadlineActive} /> },
     {
-      key: 'people', header: 'BD owner · AM', nowrap: true,
+      key: 'people', header: 'BD · AM', nowrap: true,
       render: (row) => (
         <span className="stack">
           <span>{usersById[row.request.bdOwner]?.name ?? '—'}</span>
           <span className="muted">{usersById[row.request.assignedAM]?.name ?? '—'}</span>
-        </span>
-      ),
-    },
-  ]
-  const columns = [
-    { key: 'id', header: 'Request', nowrap: true, render: (row) => <RequestCell row={row} /> },
-    {
-      key: 'client', header: 'Client · Brand · Service',
-      render: (row) => (
-        <span className="stack">
-          <span>{row.request.newForYou && <span className="new-dot" aria-label="New for you" />}
-            <ClientEvent name={row.clientName} eventName={row.request.eventName} /></span>
-          {row.request.newForYou && <span className="new-line">{row.request.newForYou.line}</span>}
-          <span className="muted">{row.brandName} · {row.serviceName} · {row.eventDateLabel}</span>
-          <RowMarkers markers={rowMarkers(row.request, viewer)} />
-        </span>
-      ),
-    },
-    {
-      key: 'deadline', header: 'Proposal deadline', nowrap: true,
-      render: (row) => <DueDate date={row.request.requiredBy} active={row.deadlineActive} />,
-    },
-    {
-      key: 'status', header: 'Status', nowrap: true,
-      render: (row) => <StatusPill pill={viewerPill(row.request, viewer, usersById, todayISO())} request={row.request} />,
-    },
-    {
-      key: 'waiting', header: 'Waiting on', nowrap: true,
-      render: (row) => <WaitingOn row={row} usersById={usersById} viewer={viewer} onOpen={setWaitingFor} />,
-    },
-    {
-      key: 'people', header: 'BD owner · Assigned AM', nowrap: true,
-      render: (row) => (
-        <span className="stack">
-          <span><span className="muted">BD</span> {usersById[row.request.bdOwner]?.name ?? '—'}</span>
-          <span><span className="muted">AM</span> {usersById[row.request.assignedAM]?.name ?? '—'}</span>
         </span>
       ),
     },
@@ -373,7 +319,7 @@ export default function ProposalTrackerPage() {
                     rowPeek={(row) => (row.opensEditor ? null : row.request.id)}
                     rowBrand={(row) => row.request.brand}
                     rowClassName={(row) => (row.request.newForYou ? 'is-new' : undefined)}
-                    columns={tracking ? trackingColumns : columns}
+                    columns={columns}
                   />
                 </div>
                 <ul className="tracker-cards">

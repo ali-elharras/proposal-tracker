@@ -480,3 +480,8 @@ export function useEventStaffing() {
   return { available: false, setNeeded: needsServer, assign: needsServer, addAndAssign: needsServer, remove: needsServer, rate: needsServer }
 }
 export function useScreen() { return result(null) }
+
+/** Deleting needs the server; the in-memory demo offers no delete. */
+export function useDelete() {
+  return { available: false, request: needsServer, client: needsServer }
+}

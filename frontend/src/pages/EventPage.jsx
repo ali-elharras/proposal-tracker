@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import DeleteDialog from '../components/DeleteDialog.jsx'
 import PageLayout from '../components/layout/PageLayout.jsx'
 import Card from '../components/ui/Card.jsx'
 import Icon from '../components/ui/Icon.jsx'
@@ -10,7 +11,7 @@ import StatusPill from '../components/ui/StatusPill.jsx'
 import Toast, { useRouteToast } from '../components/ui/Toast.jsx'
 import { Person } from '../components/dashboard/cells.jsx'
 import { Field, FormAlert, PanelButtons, successText, usePanelForm } from '../components/crm/formParts.jsx'
-import { useCurrentUser, useEvent, useEventActions, useLists, useLookups, useSampleTasks } from '../data/hooks.js'
+import { useCurrentUser, useDelete, useEvent, useEventActions, useLists, useLookups, useSampleTasks } from '../data/hooks.js'
 import { api } from '../api/client.js'
 import { serviceLabel } from '../domain/brands.js'
 import {
@@ -56,7 +57,9 @@ export default function EventPage() {
   const actions = useEventActions(ev)
   const tasks = useSampleTasks().data
   const toast = useRouteToast()
-  const [panel, setPanel] = useState(null) // 'confirm' | 'postpone' | 'date' | 'cancel'
+  const [panel, setPanel] = useState(null) // 'confirm' | 'postpone' | 'date' | 'cancel' | 'correct' | 'delete'
+  const remove = useDelete()
+  const navigate = useNavigate()
   const [comment, setComment] = useState('')
   const [commentError, setCommentError] = useState(null)
   const [seen, setSeen] = useState(null)
@@ -86,6 +89,7 @@ export default function EventPage() {
     ...(can.has('changeDate') ? [{ label: 'Change date', onSelect: () => setPanel('date') }] : []),
     ...(can.has('cancel') ? [{ label: 'Event cancelled', tone: 'danger', onSelect: () => setPanel('cancel') }] : []),
     ...(actions.available && ev.correctStatus?.allowed ? [{ label: 'Correct status (data fix)', onSelect: () => setPanel('correct') }] : []),
+    ...(ev.canDelete?.allowed && remove.available ? [{ label: 'Delete event permanently', tone: 'danger', onSelect: () => setPanel('delete') }] : []),
   ]
   const opsTasks = (tasks ?? []).filter((t) => t.related?.proposalRequestId === ev.id
     && usersById[t.owner]?.roles?.includes(ROLE.OPERATIONS))
@@ -121,9 +125,9 @@ export default function EventPage() {
           {can.has('confirm') && <button type="button" className="btn btn--primary" onClick={() => setPanel('confirm')}>Confirm event</button>}
         </>
       )}
-      crumbs={[{ label: 'Events', to: '/events' }, { label: ev.id }]}
+      crumbs={[{ label: 'Events', to: '/events' }]}
     >
-      <LinkedTodos kind="event" id={ev.id} />
+      <LinkedTodos kind="event" id={ev.id} label={ev.clientName ?? ev.id} />
       {status === EVENT_STATUS.INITIAL && ev.timing !== 'done' && <p className="details-banner details-banner--warning">{PRELIMINARY}</p>}
       {ev.timing === 'cancelled' && (
         <p className="details-banner">
@@ -137,12 +141,11 @@ export default function EventPage() {
           {ev.eventPostponeNote ? ` — ${ev.eventPostponeNote}` : ''}
         </p>
       )}
-      <div className="request-columns">
+      <div className="request-columns request-columns--details-first">
         <div className="request-columns__left">
         <Card title="The event">
           <dl className="field-list">
             <div className="field"><dt>Date(s)</dt><dd>{ev.eventDate ? formatEventDate(ev.eventDate, ev.eventEndDate, ev.eventDatePrecision) : '—'}</dd></div>
-            <div className="field"><dt>Brand · Service</dt><dd><BrandTag brand={ev.brand} /> · {serviceLabel(ev.brand, ev.service) ?? '—'}</dd></div>
             <div className="field"><dt>Participants</dt><dd className="tabular">{ev.participants ? formatNumber(ev.participants) : '—'}</dd></div>
             <div className="field"><dt>Venue</dt><dd>{show(ev.venue)}</dd></div>
             {'finalPrice' in ev && <div className="field"><dt>Final price</dt><dd className="tabular">{ev.finalPrice ? formatCurrency(ev.finalPrice) : '—'}</dd></div>}
@@ -223,6 +226,14 @@ export default function EventPage() {
       {panel === 'postpone' && <PostponePanel ev={ev} actions={actions} lists={lists} onClose={() => setPanel(null)} onSaved={done} />}
       {panel === 'date' && <ChangeDatePanel ev={ev} actions={actions} onClose={() => setPanel(null)} onSaved={done} />}
       {panel === 'cancel' && <CancelPanel ev={ev} actions={actions} lists={lists} onClose={() => setPanel(null)} onSaved={done} />}
+      <DeleteDialog open={panel === 'delete'} title={`Delete the event ${ev.id} permanently?`} name={ev.id}
+        items={[
+          `the event for ${ev.clientName ?? 'this client'}${ev.eventName ? ` (${ev.eventName})` : ''} and its proposal ${ev.id}`,
+          'its history, comments and proposal files',
+          'the facilitators assigned to it and their ratings',
+        ]}
+        onDelete={() => remove.request({ id: ev.id, rowVersion: ev.rowVersion })} onCancel={() => setPanel(null)}
+        onDone={(result) => navigate('/events', { state: { toast: result.message } })} />
       <Toast message={toast.message} />
     </PageLayout>
   )
