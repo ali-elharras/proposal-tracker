@@ -432,6 +432,11 @@ export function useEvent(id) {
   }
 }
 
+/** The event plan needs the backend (demo mode shows the page without it). */
+export function useEventPlan() {
+  return { available: false }
+}
+
 export function useEventActions() {
   const unavailable = async () => ({ ok: false, error: 'Changing confirmed events needs the server (demo data is read-only here).', errors: {} })
   return {

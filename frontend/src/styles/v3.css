@@ -758,15 +758,15 @@
 }
 
 /* Two columns on wide screens: the work on the left, short lists and to-dos on the right. */
-.dash-grid {
+.work-split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   align-items: start;
   gap: var(--space-5);
 }
 
-.dash-grid__main,
-.dash-grid__side {
+.work-split__main,
+.work-split__side {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
@@ -774,7 +774,7 @@
 }
 
 @media (max-width: 1180px) {
-  .dash-grid {
+  .work-split {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -905,7 +905,7 @@
   font-size: var(--text-sm);
 }
 
-.dash-grid__side .quiet-line {
+.work-split__side .quiet-line {
   margin: 0;
   padding: 14px var(--space-5);
   border: 1px dashed var(--border-strong);
@@ -937,4 +937,682 @@
 /* Page title area: a little more air under the title. */
 .page-header {
   margin-block-end: var(--space-6);
+}
+
+/* ======================================================================
+   Event page: at a glance, checklist, run sheet, money
+   ====================================================================== */
+.glance {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(23, 23, 28, 0.04);
+}
+
+.glance__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+  margin: 0 -1px -1px 0; /* lines between items, hidden at the outer edge by the rounded frame */
+  padding: 14px 18px;
+  border-inline-end: 1px solid var(--border);
+  border-block-end: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.glance__item dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.glance__item dd {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.glance__item.is-good dd {
+  color: var(--success-text);
+}
+
+.glance__item.is-warn dd {
+  color: var(--warning-text);
+}
+
+.plan-empty {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.plan-progress {
+  block-size: 6px;
+  margin-block-end: var(--space-3);
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--viz-track);
+}
+
+.plan-progress > span {
+  display: block;
+  block-size: 100%;
+  border-radius: 999px;
+  background: var(--success-text);
+  transition: inline-size 300ms ease;
+}
+
+.plan-progress--money > span {
+  background: var(--accent);
+}
+
+.plan-progress__label {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.plan-progress__label.is-done {
+  color: var(--success-text);
+}
+
+/* Checklist rows: tick, step (click to edit), who and by when as small pickers, remove. */
+.checklist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checklist__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: 10px 0;
+  border-block-end: 1px solid var(--border);
+}
+
+.checklist__item:last-child {
+  border-block-end: 0;
+}
+
+.checklist__item .todo__check {
+  flex: none;
+  inline-size: 18px;
+  block-size: 18px;
+  margin: 1px 0 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  appearance: none;
+  cursor: pointer;
+}
+
+.checklist__item .todo__check:checked {
+  border-color: var(--success-text);
+  background: var(--success-text) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat;
+}
+
+.checklist__item .todo__check:disabled {
+  cursor: default;
+}
+
+.checklist__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.checklist__item.is-done .checklist__title,
+.checklist__item.is-done .todo__text {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.checklist__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+/* A small chip that is a select or date picker underneath: one tap to change it. */
+.checklist__pick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  block-size: 24px;
+  padding: 0 8px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.checklist__pick:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.checklist__pick.is-overdue {
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.checklist__pick select,
+.checklist__pick input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.checklist__pick .avatar {
+  inline-size: 18px;
+  block-size: 18px;
+  font-size: 9px;
+}
+
+.checklist__nobody {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 18px;
+  block-size: 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 50%;
+  font-size: 11px;
+}
+
+.checklist__item .todo__delete {
+  opacity: 0;
+}
+
+.checklist__item:hover .todo__delete,
+.checklist__item .todo__delete:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .checklist__item .todo__delete {
+    opacity: 1;
+  }
+}
+
+.checklist__add,
+.checklist__edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+.checklist__edit {
+  margin: 0;
+}
+
+.checklist__add input,
+.checklist__edit input {
+  flex: 1 1 220px;
+  min-inline-size: 0;
+  block-size: 36px;
+  padding: 0 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.checklist__add input:focus,
+.checklist__edit input:focus {
+  border-style: solid;
+  background: var(--surface);
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+/* Run sheet: a simple timeline (time, dot, what). */
+.runsheet {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runsheet__line {
+  position: relative;
+  display: grid;
+  grid-template-columns: 92px 14px minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-block: 7px;
+}
+
+.runsheet__line::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(92px + var(--space-2) + 6px);
+  inline-size: 2px;
+  background: var(--border);
+}
+
+.runsheet__line:first-child::before {
+  inset-block-start: 50%;
+}
+
+.runsheet__line:last-child::before {
+  inset-block-end: 50%;
+}
+
+.runsheet__line:only-child::before {
+  display: none;
+}
+
+.runsheet__time {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  text-align: end;
+}
+
+.runsheet__dot {
+  position: relative;
+  z-index: 1;
+  inline-size: 10px;
+  block-size: 10px;
+  margin-inline-start: 2px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.runsheet__what {
+  overflow-wrap: anywhere;
+}
+
+.runsheet__form textarea {
+  inline-size: 100%;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+.runsheet__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+/* Money: price, received, balance, then the payments. */
+.money {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.money__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.money__label {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.money__in {
+  color: var(--success-text);
+}
+
+.money__due {
+  color: var(--warning-text);
+}
+
+.money__clear {
+  color: var(--success-text);
+}
+
+.money .plan-progress {
+  margin: 4px 0 0;
+}
+
+.money__list {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) 0 0;
+  border-block-start: 1px solid var(--border);
+  list-style: none;
+}
+
+.money__list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding-block: 6px;
+  font-size: var(--text-sm);
+}
+
+.money__list li .todo__delete {
+  opacity: 0;
+}
+
+.money__list li:hover .todo__delete {
+  opacity: 1;
+}
+
+.money__kind {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--neutral-bg);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.money__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--border);
+}
+
+.money__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (max-width: 520px) {
+  .runsheet__line {
+    grid-template-columns: 64px 14px minmax(0, 1fr);
+  }
+
+  .runsheet__line::before {
+    inset-inline-start: calc(64px + var(--space-2) + 6px);
+  }
+
+  .money__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Client page: notes under the glance numbers; the latest proposals and events as tidy rows. */
+.glance__note {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.client-activity {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.client-activity li + li {
+  border-block-start: 1px solid var(--border);
+}
+
+.client-activity__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 12px var(--space-5);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 100ms ease;
+}
+
+.client-activity__row:hover {
+  background: var(--surface-hover);
+}
+
+.client-activity__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.client-activity__main strong {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-activity__main .muted {
+  font-size: var(--text-sm);
+}
+
+.client-open {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* New proposal form: the brief under the dates; "More details" folds away until needed. */
+.form-stack--after-grid {
+  margin-block-start: var(--space-4);
+}
+
+.more-details .card__body {
+  padding: 0;
+}
+
+.more-details__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px var(--space-3);
+  padding: 16px var(--space-5);
+  cursor: pointer;
+  list-style: none;
+}
+
+.more-details__summary::-webkit-details-marker {
+  display: none;
+}
+
+.more-details__summary::before {
+  content: '+';
+  display: inline-grid;
+  place-items: center;
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: 6px;
+  background: var(--neutral-bg);
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+details[open] > .more-details__summary::before {
+  content: '–';
+}
+
+.more-details__summary .muted {
+  font-size: var(--text-sm);
+}
+
+.more-details__body {
+  padding: 0 var(--space-5) var(--space-5);
+}
+
+/* Events list: how ready each event is (checklist bar, facilitators). */
+.readiness {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.readiness__line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.readiness__bar {
+  inline-size: 48px;
+  block-size: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--viz-track);
+}
+
+.readiness__bar > span {
+  display: block;
+  block-size: 100%;
+  background: var(--success-text);
+}
+
+.readiness__ok {
+  color: var(--success-text);
+}
+
+.readiness__warn {
+  color: var(--warning-text);
+}
+
+/* Staffing ratios: two short tables (one per brand), one Save for all changes. */
+.ratio-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ratio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-5);
+}
+
+.ratio-brand__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.ratio-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ratio-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 6px 0;
+  border-block-end: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.ratio-list li:last-child {
+  border-block-end: 0;
+}
+
+.ratio-list li.is-changed > span:first-child {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ratio-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.ratio-edit input {
+  inline-size: 64px;
+  block-size: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  text-align: center;
+}
+
+/* Assigning facilitators: free people first, busy ones marked. */
+.busy-tag,
+.free-tag {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.busy-tag {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.free-tag {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.short-list--actions li {
+  gap: var(--space-2);
+}
+
+.short-list--actions li > .stack {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* The bell: Unread / All, and grouped updates. */
+.bell__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.bell__tab {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bell__tab.is-on {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.bell__more {
+  color: var(--accent);
+  font-weight: 600;
 }

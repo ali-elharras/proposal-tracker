@@ -45,6 +45,7 @@ export const useDetailsActions = impl.useDetailsActions
 export const useEvents = impl.useEvents
 export const useEvent = impl.useEvent
 export const useEventActions = impl.useEventActions
+export const useEventPlan = impl.useEventPlan
 export const useNotifications = impl.useNotifications
 export const useReminders = impl.useReminders
 export const useMarkRead = impl.useMarkRead

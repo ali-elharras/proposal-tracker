@@ -11,7 +11,7 @@ import StatusPill from '../components/ui/StatusPill.jsx'
 import Toast, { useRouteToast } from '../components/ui/Toast.jsx'
 import { Person } from '../components/dashboard/cells.jsx'
 import { Field, FormAlert, PanelButtons, successText, usePanelForm } from '../components/crm/formParts.jsx'
-import { useCurrentUser, useDelete, useEvent, useEventActions, useLists, useLookups, useSampleTasks } from '../data/hooks.js'
+import { useCurrentUser, useDelete, useEvent, useEventActions, useLists, useLookups } from '../data/hooks.js'
 import { api } from '../api/client.js'
 import { serviceLabel } from '../domain/brands.js'
 import {
@@ -21,7 +21,7 @@ import { confirmEventErrors } from '../domain/workflow.js'
 import { ROLE } from '../domain/roles.js'
 
 import { optionLabel, visibleOptions } from '../domain/lists.js'
-import { formatCurrency, formatEventDate, formatNumber, formatShortDate } from '../lib/format.js'
+import { formatEventDate, formatNumber } from '../lib/format.js'
 import { proposalLink } from '../lib/links.js'
 import { CorrectStatusPanel } from '../components/proposal/DataFixes.jsx'
 import BrandTag from '../components/ui/BrandTag.jsx'
@@ -31,6 +31,7 @@ import { celebrate } from '../components/ui/Celebration.jsx'
 import { downloadEventSheet } from '../lib/eventSheet.js'
 import { LinkedTodos } from '../components/Todos.jsx'
 import { EventStaffingCard } from '../components/staffing/Staffing.jsx'
+import { EventChecklist, EventMoney, RunSheet, checklistProgress } from '../components/events/EventPlan.jsx'
 
 const show = (v) => (v === null || v === undefined || v === '' ? '—' : v)
 
@@ -55,7 +56,6 @@ export default function EventPage() {
   const { activeRole } = useCurrentUser()
   const lists = useLists().data
   const actions = useEventActions(ev)
-  const tasks = useSampleTasks().data
   const toast = useRouteToast()
   const [panel, setPanel] = useState(null) // 'confirm' | 'postpone' | 'date' | 'cancel' | 'correct' | 'delete'
   const remove = useDelete()
@@ -91,8 +91,6 @@ export default function EventPage() {
     ...(actions.available && ev.correctStatus?.allowed ? [{ label: 'Correct status (data fix)', onSelect: () => setPanel('correct') }] : []),
     ...(ev.canDelete?.allowed && remove.available ? [{ label: 'Delete event permanently', tone: 'danger', onSelect: () => setPanel('delete') }] : []),
   ]
-  const opsTasks = (tasks ?? []).filter((t) => t.related?.proposalRequestId === ev.id
-    && usersById[t.owner]?.roles?.includes(ROLE.OPERATIONS))
   const done = (_r, text) => { setPanel(null); toast.show(text) }
   const confirmed = (r, text) => { done(r, text); celebrate(ev.clientName) }
   // The sheet for the day: HR and Operations also see who is assigned; prices never appear on it.
@@ -114,8 +112,6 @@ export default function EventPage() {
           <BrandTag brand={ev.brand} />
           <span className="muted">{serviceLabel(ev.brand, ev.service)}</span>
           {ev.eventName && <><span className="meta-sep" aria-hidden="true" /><span>{ev.eventName}</span></>}
-          <span className="meta-sep" aria-hidden="true" />
-          <span>{ev.eventDate ? formatEventDate(ev.eventDate, ev.eventEndDate, ev.eventDatePrecision) : 'Date not set'}</span>
         </>
       )}
       actions={(
@@ -141,84 +137,75 @@ export default function EventPage() {
           {ev.eventPostponeNote ? ` — ${ev.eventPostponeNote}` : ''}
         </p>
       )}
+      <EventGlance ev={ev} />
       <div className="request-columns request-columns--details-first">
         <div className="request-columns__left">
-        <Card title="The event">
-          <dl className="field-list">
-            <div className="field"><dt>Date(s)</dt><dd>{ev.eventDate ? formatEventDate(ev.eventDate, ev.eventEndDate, ev.eventDatePrecision) : '—'}</dd></div>
-            <div className="field"><dt>Participants</dt><dd className="tabular">{ev.participants ? formatNumber(ev.participants) : '—'}</dd></div>
-            <div className="field"><dt>Venue</dt><dd>{show(ev.venue)}</dd></div>
-            {'finalPrice' in ev && <div className="field"><dt>Final price</dt><dd className="tabular">{ev.finalPrice ? formatCurrency(ev.finalPrice) : '—'}</dd></div>}
-            <div className="field"><dt>BD owner</dt><dd><Person user={usersById[ev.bdOwner]} /></dd></div>
-            <div className="field"><dt>Account Manager</dt><dd><Person user={usersById[ev.assignedAM]} /></dd></div>
-            <div className="field"><dt>Client contact</dt><dd>{ev.contact ? [ev.contact.name, ev.contact.phone, ev.contact.email].filter(Boolean).join(' · ') : '—'}</dd></div>
-            <div className="field"><dt>Confirmed by</dt><dd>{ev.confirmedBy ? usersById[ev.confirmedBy]?.name ?? '—' : ev.imported ? 'Imported from the 2026 tracker' : '—'}</dd></div>
-          </dl>
-        </Card>
-        <Card title="Brief and requirements">
-          <p className="prose">{ev.brief || <span className="muted">No brief recorded.</span>}</p>
-          {ev.briefTags?.length > 0 && (
-            <p className="tag-row">{ev.briefTags.map((c) => <span key={c} className="tag">{optionLabel(lists, 'briefTags', c)}</span>)}</p>
-          )}
-          {ev.specificRequirements && <><h3 className="section-label">Requirements</h3><p className="prose">{ev.specificRequirements}</p></>}
-          {ev.teamNotes && <><h3 className="section-label">Notes for the team</h3><p className="prose">{ev.teamNotes}</p></>}
-          <div className="card-actions">
-            {ev.file && actions.fileUrl && (
-              <button type="button" className="btn" onClick={() => api.download(actions.fileUrl, `${ev.id}-v${ev.file.version}`)}>
-                Download the final proposal (v{ev.file.version})
-              </button>
+          <EventChecklist event={ev} onMessage={toast.show} />
+          <RunSheet event={ev} onMessage={toast.show} />
+          <Card title="Brief and requirements">
+            <p className="prose">{ev.brief || <span className="muted">No brief recorded.</span>}</p>
+            {ev.briefTags?.length > 0 && (
+              <ul className="tag-row" aria-label="Tags">{ev.briefTags.map((c) => <li key={c} className="tag">{optionLabel(lists, 'briefTags', c)}</li>)}</ul>
             )}
-            {!ev.file && <span className="muted">No proposal file.</span>}
-            {ev.canOpenRequest && <Link to={proposalLink(ev.id)} className="btn">Proposal history</Link>}
-          </div>
-        </Card>
+            {ev.specificRequirements && <><h3 className="section-label">Requirements</h3><p className="prose">{ev.specificRequirements}</p></>}
+            {ev.teamNotes && <><h3 className="section-label">Notes for the team</h3><p className="prose">{ev.teamNotes}</p></>}
+            <div className="card-actions">
+              {ev.file && actions.fileUrl && (
+                <button type="button" className="btn" onClick={() => api.download(actions.fileUrl, `${ev.id}-v${ev.file.version}`)}>
+                  <Icon name="document" size={16} /> Final proposal (v{ev.file.version})
+                </button>
+              )}
+              {ev.canOpenRequest && <Link to={proposalLink(ev.id)} className="btn btn--ghost">Proposal history</Link>}
+            </div>
+          </Card>
+          <Card title="People">
+            <dl className="field-list">
+              <div className="field"><dt>BD owner</dt><dd><Person user={usersById[ev.bdOwner]} /></dd></div>
+              <div className="field"><dt>Account Manager</dt><dd><Person user={usersById[ev.assignedAM]} /></dd></div>
+              <div className="field"><dt>Client contact</dt><dd>{ev.contact ? (
+                <span className="stack"><span>{ev.contact.name}</span>
+                  {ev.contact.phone && <a href={`tel:${ev.contact.phone}`}>{ev.contact.phone}</a>}
+                  {ev.contact.email && <a href={`mailto:${ev.contact.email}`}>{ev.contact.email}</a>}</span>
+              ) : '—'}</dd></div>
+              <div className="field"><dt>Confirmed by</dt><dd>{ev.confirmedBy ? usersById[ev.confirmedBy]?.name ?? '—' : ev.imported ? 'Imported from the tracker' : '—'}</dd></div>
+            </dl>
+          </Card>
         </div>
         <div className="request-columns__right">
-        {!can.size && ev.timing !== 'cancelled' && (
-          <p className="quiet-line">Only the BD owner or the Commercial Head changes the event status.</p>
-        )}
-        {opsTasks.length > 0 && (
-          <Card title="Operations tasks" subtitle="Sample data (demo only)">
-            <ul className="plain-list">
-              {opsTasks.map((t) => (
-                <li key={t.id}>
-                  <span className={t.done ? 'muted' : undefined}>{t.done ? '✓ ' : ''}{t.title}</span>
-                  <span className="muted"> · {usersById[t.owner]?.name ?? '—'} · {t.dueDate ? formatShortDate(t.dueDate) : '—'}</span>
+          <EventMoney event={ev} onMessage={toast.show} />
+          <EventStaffingCard event={ev} />
+          <Card title="Notes and changes">
+            <ol className="thread">
+              {(ev.changes ?? []).map((c, i) => (
+                <li key={`c${i}`} className="thread__system">
+                  <span><strong>{usersById[c.changedBy]?.name ?? 'Someone'}</strong>{' '}
+                    {CHANGE_TEXT[c.event]?.(c) ?? `changed the date${c.details?.from?.eventDate ? ` from ${formatEventDate(c.details.from.eventDate, c.details.from.eventEndDate)}` : ''}`}
+                    {c.note ? ` — ${c.note}` : ''}</span>
+                  <RelTime value={c.changedAt} />
                 </li>
               ))}
-            </ul>
+              {(ev.comments ?? []).map((m) => (
+                <li key={`m${m.id}`} className="bubble">
+                  <div className="bubble__body">
+                    <div className="bubble__meta"><strong>{usersById[m.author]?.name ?? 'Someone'}</strong>
+                      <RelTime value={m.createdAt} className="muted" /></div>
+                    <p className="bubble__text">{m.body}</p>
+                  </div>
+                </li>
+              ))}
+              {!(ev.changes?.length || ev.comments?.length) && <li className="thread__system">Nothing yet.</li>}
+            </ol>
+            {actions.available && activeRole !== ROLE.HR && (
+              <form className="composer" onSubmit={send}>
+                <textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Comment" placeholder="Write a note for the team" />
+                {commentError && <p className="form-field__error" role="alert">{commentError}</p>}
+                <div className="composer__buttons"><button type="submit" className="btn btn--primary btn--sm">Send</button></div>
+              </form>
+            )}
+            {!can.size && ev.timing !== 'cancelled' && (
+              <p className="quiet-line">Only the BD owner or the Commercial Head changes the event's status.</p>
+            )}
           </Card>
-        )}
-        <EventStaffingCard event={ev} />
-        <Card title="Notes and changes">
-          <ol className="thread">
-            {(ev.changes ?? []).map((c, i) => (
-              <li key={`c${i}`} className="thread__system">
-                <span><strong>{usersById[c.changedBy]?.name ?? 'Someone'}</strong>{' '}
-                  {CHANGE_TEXT[c.event]?.(c) ?? `changed the date${c.details?.from?.eventDate ? ` from ${formatEventDate(c.details.from.eventDate, c.details.from.eventEndDate)}` : ''}`}
-                  {c.note ? ` — ${c.note}` : ''}</span>
-                <RelTime value={c.changedAt} />
-              </li>
-            ))}
-            {(ev.comments ?? []).map((m) => (
-              <li key={`m${m.id}`} className="bubble">
-                <div className="bubble__body">
-                  <div className="bubble__meta"><strong>{usersById[m.author]?.name ?? 'Someone'}</strong>
-                    <RelTime value={m.createdAt} className="muted" /></div>
-                  <p className="bubble__text">{m.body}</p>
-                </div>
-              </li>
-            ))}
-            {!(ev.changes?.length || ev.comments?.length) && <li className="thread__system">Nothing yet.</li>}
-          </ol>
-          {actions.available && activeRole !== ROLE.HR && (
-            <form className="composer" onSubmit={send}>
-              <textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Comment" placeholder="Write a comment" />
-              {commentError && <p className="form-field__error" role="alert">{commentError}</p>}
-              <div className="composer__buttons"><button type="submit" className="btn btn--primary btn--sm">Send</button></div>
-            </form>
-          )}
-        </Card>
         </div>
       </div>
       {panel === 'correct' && <CorrectStatusPanel request={ev} onClose={() => setPanel(null)} onSaved={done} />}
@@ -236,6 +223,40 @@ export default function EventPage() {
         onDone={(result) => navigate('/events', { state: { toast: result.message } })} />
       <Toast message={toast.message} />
     </PageLayout>
+  )
+}
+
+/** At a glance: when, how many, where, facilitators, checklist progress and money received. */
+function EventGlance({ ev }) {
+  const progress = checklistProgress(ev.plan)
+  const staffing = ev.staffing
+  const money = ev.plan?.payments
+  const paid = money?.finalPrice ? Math.round((money.received / money.finalPrice) * 100) : null
+  const items = [
+    { label: 'When', value: ev.eventDate ? formatEventDate(ev.eventDate, ev.eventEndDate, ev.eventDatePrecision) : 'Date not set' },
+    { label: 'People', value: ev.participants ? formatNumber(ev.participants) : '—' },
+    { label: 'Venue', value: show(ev.venue) },
+    staffing && {
+      label: 'Facilitators',
+      value: staffing.needed ? `${staffing.assigned} of ${staffing.needed}` : `${staffing.assigned} assigned`,
+      tone: staffing.missing > 0 ? 'warn' : staffing.needed ? 'good' : null,
+    },
+    ev.plan && {
+      label: 'Checklist',
+      value: progress.total ? `${progress.done} of ${progress.total}` : 'Not started',
+      tone: progress.total && progress.done === progress.total ? 'good' : null,
+    },
+    money && { label: 'Paid', value: paid === null ? '—' : paid >= 100 ? 'In full' : `${paid}%`, tone: paid >= 100 ? 'good' : null },
+  ].filter(Boolean)
+  return (
+    <dl className="glance">
+      {items.map((it) => (
+        <div key={it.label} className={`glance__item${it.tone ? ` is-${it.tone}` : ''}`}>
+          <dt>{it.label}</dt>
+          <dd>{it.value}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 

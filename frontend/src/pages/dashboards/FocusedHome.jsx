@@ -285,9 +285,9 @@ export function AmHome({ subtitle }) {
         { label: 'Overdue', icon: 'alert', value: overdue.length, tone: overdue.length ? 'danger' : 'default',
           note: 'Past the proposal deadline', to: mineLink({ deadline: 'overdue' }) },
       ]} />
-      <div className="dash-grid">
-        <div className="dash-grid__main"><NeedsAttention requests={mine} today={today} /></div>
-        <div className="dash-grid__side">
+      <div className="work-split">
+        <div className="work-split__main"><NeedsAttention requests={mine} today={today} /></div>
+        <div className="work-split__side">
           <ShortList title="Due this week" rows={dueThisWeek} empty="Nothing due in the next 7 days."
             render={(r) => `due ${formatShortDate(r.requiredBy)}`}
             viewAll={dueThisWeek.length > 5 ? <Link to={mineLink({ deadline: 'upcoming' })}>View all ({dueThisWeek.length})</Link> : null} />
@@ -315,9 +315,9 @@ export function HeadHome({ subtitle }) {
         { label: 'Overdue', icon: 'alert', value: overdue, tone: overdue ? 'danger' : 'default', note: 'Past the proposal deadline',
           to: proposalsLink({ deadline: 'overdue' }) },
       ]} />
-      <div className="dash-grid">
-        <div className="dash-grid__main"><NeedsAttention requests={all} today={today} defaultChip="all" /></div>
-        <div className="dash-grid__side">
+      <div className="work-split">
+        <div className="work-split__main"><NeedsAttention requests={all} today={today} defaultChip="all" /></div>
+        <div className="work-split__side">
           <ShortList title="Last 5 results" rows={lastFive.map((x) => ({ ...x.request, resultAt: x.at }))} empty="No results yet."
             render={(r) => (
               <>

@@ -9,7 +9,11 @@ import Toast, { useRouteToast } from '../components/ui/Toast.jsx'
 import { Person } from '../components/dashboard/cells.jsx'
 import ClientForm from '../components/crm/ClientForm.jsx'
 import { usePageDescription } from './PlaceholderPage.jsx'
-import { useClients, useCurrentUser, useLists, useLookups, useUsers } from '../data/hooks.js'
+import { useAllRequests, useClients, useCurrentUser, useLists, useLookups, useUsers } from '../data/hooks.js'
+import { statsByClient } from '../domain/clientStats.js'
+import { cairoTodayISO } from '../domain/events.js'
+import { formatCurrency } from '../lib/format.js'
+import RelTime from '../components/ui/RelTime.jsx'
 import { findNavItem } from '../navigation.js'
 import { BRANDS } from '../domain/brands.js'
 import { CLIENT_TYPES } from '../domain/catalog.js'
@@ -56,6 +60,10 @@ export default function ClientsPage() {
   }
   const filtered = Boolean(filters.q || filters.type || filters.brand || (view === 'all' && filters.owner))
   const { data: clients, isLoading, error } = useClients(filters)
+  // Activity per client (only for people who see proposals): open proposals, confirmed value, last activity.
+  const { pages } = useCurrentUser()
+  const allRequests = useAllRequests() // only what this viewer may see
+  const stats = pages?.proposals && allRequests.data ? statsByClient(allRequests.data, cairoTodayISO()) : null
   const setValue = (key) => (value) => {
     const next = new URLSearchParams(params)
     if (value) next.set(key, value)
@@ -131,6 +139,27 @@ export default function ClientsPage() {
               { key: 'brands', header: 'Brands', render: (c) => (c.brands.length
                 ? <span className="brand-list">{c.brands.map((b) => <BrandTag key={b} brand={b} />)}</span> : <span className="muted">—</span>) },
               { key: 'owner', header: 'Relationship owner', nowrap: true, render: (c) => <Person user={usersById[c.owner]} /> },
+              ...(stats ? [
+                {
+                  key: 'activity', header: 'Proposals', nowrap: true,
+                  render: (c) => {
+                    const s = stats[c.id]
+                    if (!s?.total) return <span className="muted">None yet</span>
+                    return (
+                      <span className="stack">
+                        <span>{s.open ? <strong className="client-open">{s.open} open</strong> : <span className="muted">None open</span>}
+                          <span className="muted"> · {s.won} won</span></span>
+                        <span className="muted">{s.lastActivity ? <>Active <RelTime value={s.lastActivity} /></> : '—'}</span>
+                      </span>
+                    )
+                  },
+                },
+                {
+                  key: 'value', header: 'Confirmed value', align: 'end', nowrap: true,
+                  render: (c) => (stats[c.id]?.confirmedValue
+                    ? <span className="tabular">{formatCurrency(stats[c.id].confirmedValue)}</span> : <span className="muted">—</span>),
+                },
+              ] : []),
               {
                 key: 'contact', header: 'Main contact',
                 render: (c) => (c.contact?.name

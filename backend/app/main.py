@@ -8,7 +8,7 @@ from .database import make_engine, make_sessionmaker
 from .errors import install_error_handlers
 from .migrations_check import check_schema
 from .routers import (
-    accounts, analytics, clients, events, meta, notifications, opportunities, proposal_requests, radar, screen, staffing, todos,
+    accounts, analytics, clients, event_plan, events, meta, notifications, opportunities, proposal_requests, radar, screen, staffing, todos,
 )
 from .settings import Settings, load_settings
 from .storage import FileStorage, LocalFileStorage
@@ -61,6 +61,7 @@ def create_app(settings: Settings | None = None, *, engine=None, check_db_schema
     app.include_router(analytics.router)
     app.include_router(notifications.router)
     app.include_router(events.router)
+    app.include_router(event_plan.router)
     app.include_router(todos.router)
     return app
 

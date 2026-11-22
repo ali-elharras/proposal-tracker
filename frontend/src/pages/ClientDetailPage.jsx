@@ -28,6 +28,8 @@ import { CLIENT_TYPES } from '../domain/catalog.js'
 import { isActiveOpportunity } from '../domain/metrics.js'
 import { EVENT_TIMING_LABELS, cairoTodayISO, clientEvents } from '../domain/events.js'
 import { formatCurrency, formatEventDate } from '../lib/format.js'
+import { clientStats } from '../domain/clientStats.js'
+import RelTime from '../components/ui/RelTime.jsx'
 import { newRequestLink, opportunityLink, proposalLink } from '../lib/links.js'
 import Icon from '../components/ui/Icon.jsx'
 import BrandTag from '../components/ui/BrandTag.jsx'
@@ -154,6 +156,7 @@ export default function ClientDetailPage() {
         <Person user={owner} suffix="Relationship owner" />
         {client.archivedAt && <Badge tone="neutral">Archived</Badge>}
       </div>
+      {pages?.proposals && <ClientGlance stats={clientStats((requests.data ?? []).filter((r) => r.clientId === client.id), cairoTodayISO())} />}
 
       <Tabs label="Client sections" value={tab} onChange={setTab} tabs={[
         { id: 'overview', label: 'Overview' },
@@ -165,14 +168,39 @@ export default function ClientDetailPage() {
       {tab === 'overview' && (
         <div className="dash-grid detail-grid">
           <div className="span-8 detail-col">
-            <Card title="Open opportunities" subtitle="Values are estimates" flush>
-              {openOpps.length === 0 && !opportunities.isLoading ? (
-                <div className="empty-line card-pad"><span>No open opportunities.</span>{addOpportunity}</div>
+            <Card title="Proposals and events" flush
+              actions={events.rows.length > 5 ? <button type="button" className="btn-link" onClick={() => setTab('events')}>See all ({events.rows.length})</button> : null}>
+              {events.rows.length === 0 ? (
+                <div className="empty-line card-pad"><span>{requests.isLoading ? 'Loading…' : 'No proposals for this client yet.'}</span>{newProposal}</div>
               ) : (
-                <DataTable caption="Open opportunities" rows={openOpps} rowKey={(o) => o.id} rowHref={pages?.opportunities ? (o) => opportunityLink(o.id) : undefined}
-                  emptyMessage="Loading…" columns={oppColumns} />
+                <ul className="client-activity">
+                  {events.rows.slice(0, 5).map(({ request: r, timing }) => (
+                    <li key={r.id}>
+                      <Link to={timing ? `/events/${encodeURIComponent(r.id)}` : proposalLink(r.id)} className="client-activity__row">
+                        <span className="client-activity__main">
+                          <strong>{r.eventName ?? serviceLabel(r.brand, r.service)}</strong>
+                          <span className="muted"><BrandTag brand={r.brand} muted /> · {r.eventDate ? formatEventDate(r.eventDate, r.eventEndDate) : 'No date yet'}</span>
+                        </span>
+                        {timing ? (
+                          <span className="status-badge"><Badge tone="success">Confirmed</Badge>
+                            <span className="status-badge__sub">{EVENT_TIMING_LABELS[timing]}</span></span>
+                        ) : <StatusBadge kind="proposal" status={r.status} version={r.version} compact />}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
               )}
             </Card>
+            {(openOpps.length > 0 || addOpportunity) && (
+              <Card title="Open opportunities" subtitle="Values are estimates" flush>
+                {openOpps.length === 0 && !opportunities.isLoading ? (
+                  <div className="empty-line card-pad"><span>No open opportunities.</span>{addOpportunity}</div>
+                ) : (
+                  <DataTable caption="Open opportunities" rows={openOpps} rowKey={(o) => o.id} rowHref={pages?.opportunities ? (o) => opportunityLink(o.id) : undefined}
+                    emptyMessage="Loading…" columns={oppColumns} />
+                )}
+              </Card>
+            )}
             <Card title="Latest updates">
               <ClientHistoryList items={historyItems} usersById={usersById} limit={3}
                 empty={history.isLoading ? 'Loading…' : 'No changes recorded yet.'} />
@@ -298,5 +326,30 @@ function ContactLines({ contact }) {
       {contact.email && <a href={`mailto:${contact.email}`}>{contact.email}</a>}
       {contact.notes && <span className="muted">{contact.notes}</span>}
     </div>
+  )
+}
+
+const eventWhen = (r) => formatEventDate(r.eventDate, r.eventEndDate, r.eventDatePrecision)
+
+/** The client at a glance: confirmed value, win rate, proposals, next or last event, last activity. */
+function ClientGlance({ stats }) {
+  const items = [
+    stats.confirmedValue !== null && { label: 'Confirmed value', value: formatCurrency(stats.confirmedValue), tone: 'good' },
+    { label: 'Win rate', value: stats.winRate === null ? '—' : `${stats.winRate}%`, note: `${stats.won} won · ${stats.lost} lost` },
+    { label: 'Proposals', value: String(stats.total), note: stats.open ? `${stats.open} open now` : 'None open' },
+    stats.nextEventRequest ? { label: 'Next event', value: eventWhen(stats.nextEventRequest), tone: 'good' }
+      : { label: 'Last event', value: stats.lastEventRequest ? eventWhen(stats.lastEventRequest) : '—' },
+    { label: 'Last activity', value: stats.lastActivity ? <RelTime value={stats.lastActivity} /> : '—' },
+  ].filter(Boolean)
+  return (
+    <dl className="glance">
+      {items.map((it) => (
+        <div key={it.label} className={`glance__item${it.tone ? ` is-${it.tone}` : ''}`}>
+          <dt>{it.label}</dt>
+          <dd>{it.value}</dd>
+          {it.note && <span className="glance__note">{it.note}</span>}
+        </div>
+      ))}
+    </dl>
   )
 }

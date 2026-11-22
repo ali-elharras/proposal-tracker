@@ -16,12 +16,13 @@ import { usePageDescription } from './PlaceholderPage.jsx'
 import { useAnalyticsData, useCurrentUser, useLists, useLookups } from '../data/hooks.js'
 import { findNavItem } from '../navigation.js'
 import { isManagementView } from '../domain/access.js'
-import { BRANDS, getBrand } from '../domain/brands.js'
+import { BRANDS, getBrand, serviceLabel } from '../domain/brands.js'
+import { getStatus } from '../domain/status.js'
 import { cairoTodayISO, eventCounts } from '../domain/events.js'
 import { optionLabel } from '../domain/lists.js'
 import {
   PERIODS, PERIOD_IDS, amScorecard, amTable, bdScorecard, bdTable, changeCounts, companyScorecard, daysText, lostReasons,
-  measuresOf, monthly, onTimeRate, results, scorecardCsv, turnaround, valueCards,
+  measuresOf, monthly, onTimeRate, proposalsCsv, results, scorecardCsv, turnaround, valueCards,
 } from '../domain/scorecard.js'
 import { getTeam } from '../domain/waiting.js'
 import { formatCurrency, formatShortDate, formatTotal } from '../lib/format.js'
@@ -60,6 +61,7 @@ export function Analytics({ mine = false }) {
   const brand = BRANDS.some((b) => b.id === params.get('brand')) ? params.get('brand') : ''
   const analytics = useAnalyticsData({ person, as })
   const lists = useLists().data
+  const { clientsById, usersById } = useLookups()
   const [resultTab, setResultTab] = useState('won')
   const today = cairoTodayISO()
   const set = (patch) => {
@@ -99,6 +101,22 @@ export function Analytics({ mine = false }) {
     a.click()
     URL.revokeObjectURL(url)
   }
+  // "Export to Excel": the proposals of this period (and brand / scorecard), one row each.
+  const exportProposals = () => {
+    const csv = proposalsCsv(requests, period, today, {
+      clientName: (r) => clientsById[r.clientId]?.name ?? r.clientName ?? r.clientId,
+      userName: (id) => usersById[id]?.name ?? id ?? '',
+      statusLabel: (st) => getStatus('proposal', st).label,
+      serviceName: (r) => serviceLabel(r.brand, r.service),
+      brandName: (b) => getBrand(b)?.name ?? b,
+    })
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `iee-proposals-${period}-${today}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
   const personValue = person ? `${person}:${as}` : ''
   const nameOf = (p) => (p.active ? p.name : `${p.name} (Former team member)`)
   const ev = eventCounts(requests, today)
@@ -112,7 +130,9 @@ export function Analytics({ mine = false }) {
       <FilterBar
         active={[brand, person].filter(Boolean).length}
         onClear={() => set({ brand: '', person: '', as: '' })}
-        end={company && ['bd', 'am'].includes(active) ? <button type="button" className="btn btn--sm" onClick={download}><Icon name="arrowDown" size={14} /> Download CSV</button> : null}
+        end={company && ['bd', 'am'].includes(active)
+          ? <button type="button" className="btn btn--sm" onClick={download}><Icon name="arrowDown" size={14} /> Export to Excel</button>
+          : <button type="button" className="btn btn--sm" onClick={exportProposals}><Icon name="arrowDown" size={14} /> Export to Excel</button>}
       >
         <SegmentedControl label="Period" value={period} onChange={(v) => set({ period: v === 'year' ? '' : v })}
           options={PERIODS.map((p) => ({ value: p.id, label: p.label }))} />

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from ..models import (
     Client, ClientBrand, ClientContact, ClientHistory, FacilitatorAssignment, FacilitatorRating,
     FacilitatorRatingHistory, Notification, Opportunity, OpportunityHistory, ProposalFile, ProposalRequest,
-    RadarDismissal, RequestComment, RequestEvent, RequestRead, RequestStatusHistory, Todo,
+    RadarDismissal, RequestComment, RequestEvent, RequestRead, RequestStatusHistory, Todo, EventPayment, EventTask,
 )
 
 LOCKED = ("request_status_history", "request_events", "request_comments", "proposal_files", "opportunity_history",
@@ -58,7 +58,7 @@ def _remove_requests(db: Session, ids: list[str]) -> dict:
     if ratings:
         db.execute(delete(FacilitatorRatingHistory.__table__).where(FacilitatorRatingHistory.rating_id.in_(ratings)))
     for model in (FacilitatorRating, FacilitatorAssignment, RequestRead, RequestComment, ProposalFile, RequestEvent,
-                  RequestStatusHistory):
+                  RequestStatusHistory, EventTask, EventPayment):
         db.execute(delete(model.__table__).where(model.request_id.in_(ids)))
     db.execute(update(OpportunityHistory.__table__).where(OpportunityHistory.source_request_id.in_(ids))
                .values(source_request_id=None))

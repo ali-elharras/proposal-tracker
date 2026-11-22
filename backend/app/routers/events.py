@@ -120,15 +120,35 @@ def list_events(actor: Actor = Depends(get_current_actor), now: datetime = Depen
     rows = db.scalars(select(ProposalRequest).where(ProposalRequest.status.in_(("accepted",) + rules.PIPELINE))
                       .options(selectinload(ProposalRequest.history))).all()
     items, pipeline = [], []
+    ready = _readiness(db, [r.id for r in rows if r.status == "accepted"])
     for row in rows:
         view = request_from_orm(row)
         if row.status == "accepted":
             if rules.can_see_event(view, actor, users):
-                items.append({**_summary(row, view, actor, users, names), "timing": _timing(view, today)})
+                items.append({**_summary(row, view, actor, users, names), "timing": _timing(view, today),
+                              "checklist": ready["checklist"].get(row.id, {"done": 0, "total": 0}),
+                              "facilitators": {"needed": row.facilitators_needed,
+                                               "assigned": ready["assigned"].get(row.id, 0)}})
         elif rules.can_see_pipeline_item(view, actor, users):
             pipeline.append(_pipeline_item(row, view, names))
     return {"items": items, "total": len(items), "pipeline": pipeline, "today": today,
             "seePrices": rules.can_see_event_price(actor), "newIds": _new_ids(db, actor)}
+
+
+def _readiness(db: Session, ids: list[str]) -> dict:
+    """Per event: checklist progress { done, total } and facilitators assigned (for the Events list)."""
+    from sqlalchemy import func
+    from ..models import EventTask, FacilitatorAssignment
+    if not ids:
+        return {"checklist": {}, "assigned": {}}
+    checklist = {rid: {"done": int(done or 0), "total": int(total)} for rid, total, done in db.execute(
+        select(EventTask.request_id, func.count(EventTask.id), func.count(EventTask.done_at))
+        .where(EventTask.request_id.in_(ids)).group_by(EventTask.request_id)).all()}
+    assigned = dict(db.execute(
+        select(FacilitatorAssignment.request_id, func.count(FacilitatorAssignment.id))
+        .where(FacilitatorAssignment.request_id.in_(ids), FacilitatorAssignment.removed_at.is_(None))
+        .group_by(FacilitatorAssignment.request_id)).all())
+    return {"checklist": checklist, "assigned": assigned}
 
 
 def _pipeline_item(row, view, names) -> dict:
@@ -174,6 +194,8 @@ def _detail(db: Session, row, users, actor, today: str) -> dict:
     if actor.active_role == "hr":  # staffing only: never files, conversations or the client's contact
         out.update({"file": None, "comments": [], "contact": None, "canOpenRequest": False})
     out["canDelete"] = deletion_rules.can_delete_request(view, actor, users)  # deleting an event deletes its proposal
+    from .event_plan import plan_of  # the checklist, run sheet and (for those who see prices) payments
+    out["plan"] = plan_of(db, row, actor, users)
     return out
 
 

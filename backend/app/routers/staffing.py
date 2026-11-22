@@ -212,6 +212,25 @@ def _list_context(db: Session, today: str):
     return assignments, ratings, done, days
 
 
+def _booked(db: Session, assignments, today: str) -> dict:
+    """facilitator id -> [{ eventId, start, end }] for confirmed events from today on (exact dates only)."""
+    active = [a for a in assignments if a.removed_at is None]
+    rows = {r.id: r for r in db.scalars(select(ProposalRequest).where(
+        ProposalRequest.id.in_({a.request_id for a in active}), ProposalRequest.status == "accepted")).all()}
+    out: dict = {}
+    for a in active:
+        r = rows.get(a.request_id)
+        if r is None or r.event_status == "cancelled" or r.event_cancelled_at is not None:
+            continue
+        v = request_from_orm(r)
+        if v.event_date_precision != "day" or not v.event_date:
+            continue
+        end = v.event_end_date or v.event_date
+        if end >= today:
+            out.setdefault(a.facilitator_id, []).append({"eventId": r.id, "start": v.event_date, "end": end})
+    return out
+
+
 def _can_see_list(actor: Actor) -> bool:
     return _sees_staffing(actor)
 
@@ -224,6 +243,9 @@ def list_facilitators(actor: Actor = Depends(get_current_actor), now: datetime =
     assignments, ratings, done, days = _list_context(db, today)
     items = [_summary(f, assignments, ratings, done, days, rules.can_see_ratings(actor))
              for f in db.scalars(select(Facilitator).where(Facilitator.archived_at.is_(None))).all()]
+    booked = _booked(db, assignments, today)
+    for item in items:  # upcoming days each person is already on (to show "Busy that day" before assigning)
+        item["booked"] = booked.get(item["id"], [])
     items.sort(key=lambda x: (-x["eventsAttended"], x["name"].lower()))  # most attended first (the default sort)
     return {"items": items, "canManage": rules.can_manage_facilitators(actor), "seeRatings": rules.can_see_ratings(actor)}
 

@@ -334,6 +334,7 @@ class ProposalRequest(TimestampMixin, Base):
     final_price: Mapped[int | None] = mapped_column(Integer)  # whole EGP; hidden from Marketing and Operations
     venue: Mapped[str | None] = mapped_column(String(200))
     team_notes: Mapped[str | None] = mapped_column(Text)
+    run_sheet: Mapped[str | None] = mapped_column(Text)  # the event day's timings, one line each (event plan)
     event_cancelled_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     event_cancel_reason: Mapped[str | None] = mapped_column(String(40))  # an eventCancelReasons code
     event_cancel_note: Mapped[str | None] = mapped_column(String(300))
@@ -810,4 +811,41 @@ class Todo(Base):
     __table_args__ = (
         CheckConstraint("link_kind IS NULL OR link_kind IN ('client', 'request', 'event')", name="ck_todos_link_kind"),
         CheckConstraint("(link_kind IS NULL) = (link_id IS NULL)", name="ck_todos_link_pair"),
+    )
+
+
+class EventTask(Base):
+    """One line of an event's checklist (venue booked, transport, ...): who, by when, done or not."""
+
+    __tablename__ = "event_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(ForeignKey("proposal_requests.id"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    assignee_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    due_on: Mapped[date | None] = mapped_column(Date)
+    done_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    done_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+
+
+class EventPayment(Base):
+    """Money received for an event (deposit, balance or other), in whole EGP. Only people who see prices see it."""
+
+    __tablename__ = "event_payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(ForeignKey("proposal_requests.id"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    received_on: Mapped[date] = mapped_column(Date, nullable=False)
+    note: Mapped[str | None] = mapped_column(String(300))
+    recorded_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('deposit', 'balance', 'other')", name="ck_event_payments_kind"),
+        CheckConstraint("amount > 0", name="ck_event_payments_amount"),
     )

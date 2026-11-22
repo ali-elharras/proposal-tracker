@@ -517,6 +517,24 @@ export function useEventActions(event) {
   }), [write, path, version])
 }
 
+/**
+ * The event plan (checklist, run sheet, payments). Each write answers { plan, message }; the event reloads.
+ */
+export function useEventPlan(event) {
+  const write = useWrite()
+  const path = event ? `/api/events/${encodeURIComponent(event.id)}` : null
+  return useMemo(() => ({
+    available: true,
+    addTask: (values) => write(() => api.post(`${path}/tasks`, values)),
+    addStandard: () => write(() => api.post(`${path}/tasks/standard`, {})),
+    editTask: (id, values) => write(() => api.patch(`${path}/tasks/${id}`, values)),
+    deleteTask: (id) => write(() => api.post(`${path}/tasks/${id}/delete`, {})),
+    saveRunSheet: (runSheet) => write(() => api.patch(`${path}/run-sheet`, { runSheet })),
+    addPayment: (values) => write(() => api.post(`${path}/payments`, values)),
+    deletePayment: (id) => write(() => api.post(`${path}/payments/${id}/delete`, {})),
+  }), [write, path])
+}
+
 /** The bell: { items (latest 20), unread }, read(id), readAll(). */
 export function useNotifications() {
   const { viewer } = useApi()

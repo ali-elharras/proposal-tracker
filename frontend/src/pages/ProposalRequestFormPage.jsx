@@ -141,6 +141,7 @@ function RequestForm({ draftId, draft, form, reloadDraft, previous = null }) {
   const [values, setValues] = useState(() => (draft ? toFormValues(draft)
     : prefill(location.search, clients, opportunities, previous ? [previous, ...allRequests] : allRequests)))
   const [showEndDate, setShowEndDate] = useState(() => Boolean(draft?.eventEndDate))
+  const [moreOpen, setMoreOpen] = useState(false) // "More details": opens by itself when something in it is filled or wrong
   // Fields the person set by hand: a smart default never overwrites them (a saved draft counts as set).
   const [manual, setManual] = useState(() => (draft ? { requiredBy: true, occasionId: true, briefTags: true } : {}))
   const markManual = (field) => setManual((m) => (m[field] ? m : { ...m, [field]: true }))
@@ -317,7 +318,7 @@ function RequestForm({ draftId, draft, form, reloadDraft, previous = null }) {
       <form className="request-form" onSubmit={(e) => { e.preventDefault(); run(true) }} noValidate>
         <div className="dash-grid detail-grid request-form__grid">
           <div className="span-8 detail-col">
-            <Card title="Client & service">
+            <Card title="What and for whom">
               <div className="form-grid">
                 <Field id="f-clientId" label="Client" required error={errors.clientId}
                   hint={ownerUser
@@ -376,7 +377,7 @@ function RequestForm({ draftId, draft, form, reloadDraft, previous = null }) {
               </div>
             </Card>
 
-            <Card title="Dates and size">
+            <Card title="The event">
               <div className="form-grid">
                 <Field id="f-eventDate" label="Event date" error={errors.eventDate}
                   hint={values.eventDatePrecision === 'month' ? 'Month and year only; the exact day is not known yet.'
@@ -435,24 +436,8 @@ function RequestForm({ draftId, draft, form, reloadDraft, previous = null }) {
                   )}
                 </Field>
 
-                <Field id="f-eventName" label="Event name (optional)" error={errors.eventName}
-                  hint="Shown next to the client in lists.">
-                  <input type="text" maxLength={EVENT_NAME_MAX} placeholder="e.g. Summer team day" {...fieldProps('eventName')}
-                    value={values.eventName} onChange={set('eventName')} />
-                </Field>
-                {occasions.length > 0 && (
-                  <Field id="f-occasion" label="Occasion (optional)" error={errors.occasionId} hint={!manual.occasionId && values.occasionId ? 'From the event date; change it if needed.' : 'Ramadan, Easter, Summer…: helps us call back next time.'}>
-                    <select {...fieldProps('occasionId')} value={values.occasionId} onChange={set('occasionId')}>
-                      <option value="">None</option>
-                      {occasions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                    </select>
-                  </Field>
-                )}
               </div>
-            </Card>
-
-            <Card title="Requirements">
-              <div className="form-stack">
+              <div className="form-stack form-stack--after-grid">
                 <Field id="f-requirementsSummary" label="Event brief" error={errors.requirementsSummary}
                   hint="What the client wants: format, audience, location, duration.">
                   <textarea rows={4} {...fieldProps('requirementsSummary')} value={values.requirementsSummary}
@@ -466,6 +451,33 @@ function RequestForm({ draftId, draft, form, reloadDraft, previous = null }) {
                     </span>
                   )}
                 </Field>
+              </div>
+            </Card>
+
+            <Card className="more-details">
+              <details open={moreOpen || Boolean(values.eventName || values.specificRequirements || values.briefTags.length
+                || errors.eventName || errors.occasionId || errors.briefTags || errors.specificRequirements)}
+                onToggle={(e) => setMoreOpen(e.currentTarget.open)}>
+                <summary className="more-details__summary">
+                  <span className="card__title">More details</span>
+                  <span className="muted">Optional: event name, occasion, tags and specific requirements</span>
+                </summary>
+                <div className="form-stack more-details__body">
+                  <div className="form-grid">
+                    <Field id="f-eventName" label="Event name (optional)" error={errors.eventName}
+                      hint="Shown next to the client in lists.">
+                      <input type="text" maxLength={EVENT_NAME_MAX} placeholder="e.g. Summer team day" {...fieldProps('eventName')}
+                        value={values.eventName} onChange={set('eventName')} />
+                    </Field>
+                    {occasions.length > 0 && (
+                      <Field id="f-occasion" label="Occasion (optional)" error={errors.occasionId} hint={!manual.occasionId && values.occasionId ? 'From the event date; change it if needed.' : 'Ramadan, Easter, Summer…: helps us call back next time.'}>
+                        <select {...fieldProps('occasionId')} value={values.occasionId} onChange={set('occasionId')}>
+                          <option value="">None</option>
+                          {occasions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                        </select>
+                      </Field>
+                    )}
+                  </div>
                 <fieldset className="form-field reason-picker">
                   <legend className="form-field__label">Quick tags (optional)</legend>
                   <div className="reason-picker__options">
@@ -483,7 +495,8 @@ function RequestForm({ draftId, draft, form, reloadDraft, previous = null }) {
                   <textarea rows={3} {...fieldProps('specificRequirements')} value={values.specificRequirements}
                     onChange={set('specificRequirements')} />
                 </Field>
-              </div>
+                </div>
+              </details>
             </Card>
           </div>
 

@@ -12,7 +12,8 @@ import { FilterBar, FilterMenu } from '../components/ui/Filters.jsx'
 import Toast, { useRouteToast } from '../components/ui/Toast.jsx'
 import useTab from '../lib/useTab.js'
 import { ROLE } from '../domain/roles.js'
-import { BRANDS, getBrand } from '../domain/brands.js'
+import { BRANDS, getBrand, serviceLabel } from '../domain/brands.js'
+import { ClientEvent } from '../components/dashboard/cells.jsx'
 import {
   EVENT_PERIODS, EVENT_STATUS, calendarEvents, calendarMonth, EVENT_TIMING, OPS_DONE_LIMIT, PRELIMINARY, cairoTodayISO, eventPill, operationsSections,
   pipelineStage,
@@ -94,7 +95,8 @@ export default function EventsPage() {
       actions={pastAllowed ? <button type="button" className="btn" onClick={() => setPastOpen(true)}>+ Add past record</button> : null}>
       {pastOpen && <PastRecordPanel onClose={() => setPastOpen(false)} />}
       <Tabs label="Events" value={section} onChange={setSection}
-        tabs={tabs.map((t) => ({ ...t, count: data ? counts[t.id] : undefined }))} />
+        tabs={tabs.filter((t) => !data || t.id === 'calendar' || t.id === section || countOf(t.id) > 0)
+          .map((t) => ({ ...t, count: data ? counts[t.id] : undefined }))} />
       <FilterBar active={[brand, period !== 'all' && section !== 'calendar'].filter(Boolean).length}
         onClear={() => { const next = new URLSearchParams(params); next.delete('brand'); next.delete('period'); setParams(next, { replace: true }) }}
         count={data && section !== 'calendar' ? `${rows.length} ${rows.length === 1 ? 'event' : 'events'}` : null}>
@@ -162,16 +164,44 @@ function columnsFor(section, { lists, fresh }) {
   return [
     date,
     {
-      key: 'client', header: 'Client',
+      key: 'client', header: 'Client · Event',
       render: ({ request: r }) => (
-        <span>{fresh.has(r.id) && <span className="new-dot" aria-label="New" />}{dash(r.clientName)}</span>
+        <span className="stack">
+          <span className="cell-client">{fresh.has(r.id) && <span className="new-dot" aria-label="New" />}
+            <ClientEvent name={r.clientName} eventName={r.eventName} /></span>
+          <span className="muted cell-meta"><BrandTag brand={r.brand} muted /> · {serviceLabel(r.brand, r.service)}</span>
+        </span>
       ),
     },
-    { key: 'event', header: 'Event name', render: ({ request: r }) => (r.eventName ? <span className="cell-truncate" title={r.eventName}>{r.eventName}</span> : '—') },
-    { key: 'people', header: 'Participants', align: 'end', nowrap: true, render: ({ request: r }) => <span className="tabular">{r.participants ? formatNumber(r.participants) : '—'}</span> },
-    { key: 'brand', header: 'Brand', nowrap: true, render: ({ request: r }) => <BrandTag brand={r.brand} /> },
+    { key: 'people', header: 'People', align: 'end', nowrap: true, render: ({ request: r }) => <span className="tabular">{r.participants ? formatNumber(r.participants) : '—'}</span> },
+    ...(section === 'pipeline' || section === 'off' || section === 'done' ? [] : [{
+      key: 'ready', header: 'Getting ready', nowrap: true, render: ({ request: r }) => <Readiness event={r} />,
+    }]),
     last,
   ]
+}
+
+/** "Checklist 3/6" with a small bar, and "Facilitators 2 of 4" (amber while some are missing). */
+function Readiness({ event: r }) {
+  const c = r.checklist
+  const f = r.facilitators
+  if (!c && !f) return <span className="muted">—</span>
+  const missing = f?.needed ? Math.max(0, f.needed - f.assigned) : 0
+  return (
+    <span className="readiness">
+      {c && (
+        <span className="readiness__line" title="Checklist">
+          <span className="readiness__bar" aria-hidden="true"><span style={{ inlineSize: c.total ? `${(c.done / c.total) * 100}%` : 0 }} /></span>
+          <span className={c.total && c.done === c.total ? 'readiness__ok' : 'muted'}>{c.total ? `${c.done}/${c.total} steps` : 'No checklist'}</span>
+        </span>
+      )}
+      {f && (
+        <span className={`readiness__line${missing ? ' readiness__warn' : ''}`}>
+          {f.needed ? `${f.assigned} of ${f.needed} facilitators` : f.assigned ? `${f.assigned} facilitators` : <span className="muted">Facilitators not set</span>}
+        </span>
+      )}
+    </span>
+  )
 }
 
 // ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@ from .conftest import sqlite_url
 TABLES = {"users", "user_roles", "clients", "client_brands", "opportunities", "opportunity_history",
           "proposal_requests", "request_status_history", "proposal_files", "request_comments", "client_contacts", "client_history", "request_events", "user_history", "brand_routing", "routing_history", "id_counters", "app_meta", "list_options", "notifications", "request_reads", "alembic_version",
           "occasions", "occasion_periods", "radar_dismissals", "todos", "staffing_ratios", "facilitators", "facilitator_notes",
-          "facilitator_assignments", "facilitator_ratings", "facilitator_rating_history"}
+          "facilitator_assignments", "facilitator_ratings", "facilitator_rating_history", "event_tasks", "event_payments"}
 TRIGGERS = {"opportunity_history_no_update", "opportunity_history_no_delete",
             "request_status_history_no_update", "request_status_history_no_delete",
             "proposal_files_no_update", "proposal_files_no_delete",
@@ -45,7 +45,7 @@ def test_upgrade_downgrade_upgrade(tmp_path):
     tables, triggers, rev = snapshot(url)
     assert tables == TABLES
     assert triggers == TRIGGERS
-    assert rev == head_revision(url) == "0019"
+    assert rev == head_revision(url) == "0020"
 
     command.downgrade(config, "base")
     tables, triggers, rev = snapshot(url)

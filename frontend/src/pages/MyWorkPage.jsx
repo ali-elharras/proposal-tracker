@@ -175,8 +175,8 @@ function MyWork({ subtitle }) {
       ) : (
         <div className="my-work">
           <MorningSummary counts={counts} />
-          <div className="dash-grid">
-          <div className="dash-grid__main">
+          <div className="work-split">
+          <div className="work-split__main">
           {fresh.length > 0 && (
             <Card id="new" title={`New (${fresh.length})`} flush>
               {table(fresh, "What's new", 'New for you')}
@@ -219,7 +219,7 @@ function MyWork({ subtitle }) {
             </Card>
           )}
           </div>
-          <div className="dash-grid__side">
+          <div className="work-split__side">
           <MyTodos />
           {finished.length > 0 && (
             <Card title="Recently finished" flush>

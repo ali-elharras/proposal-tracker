@@ -419,3 +419,20 @@ export function funnelChange(requests, period, today) {
   const keys = ['received', 'prepared', 'sent', 'won', 'lost', 'postponed']
   return { label: `vs ${PREVIOUS_LABEL[period]}`, ...Object.fromEntries(keys.map((k) => [k, now[k] - prev[k]])) }
 }
+
+/**
+ * "Export to Excel" on Analytics: every proposal with something in the period (received, prepared, sent,
+ * confirmed, lost or postponed), one row each. CSV with a byte-order mark so Excel reads Arabic names too.
+ */
+export function proposalsCsv(requests, period, today, { clientName, userName, statusLabel, serviceName, brandName }) {
+  const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const line = (cells) => cells.map(cell).join(',')
+  const rows = requests.filter((r) => Object.values(measuresOf(r, period, today)).some(Boolean))
+  return '﻿' + [
+    line(['ID', 'Client', 'Event', 'Brand', 'Service', 'Status', 'BD owner', 'Account Manager', 'Submitted', 'Event date',
+      'Participants', 'Proposal price (EGP)', 'Final price (EGP)']),
+    ...rows.map((r) => line([r.id, clientName(r), r.eventName, brandName(r.brand), serviceName(r), statusLabel(r.status),
+      userName(r.bdOwner), userName(r.assignedAM), cairoDay(submittedAt(r)) ?? '', r.eventDate ?? '', r.participants ?? '',
+      r.amPrice ?? '', r.finalPrice ?? ''])),
+  ].join('\r\n')
+}

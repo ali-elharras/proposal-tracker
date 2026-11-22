@@ -93,7 +93,13 @@ function AssignPanel({ event, onClose, onDone }) {
   const form = usePanelForm({ ...EMPTY })
   const { values, failure, busy, submit } = form
   const taken = new Set((event.staffing?.facilitators ?? []).map((f) => f.id))
+  // Who is free on this event's day(s): people already booked then are marked "Busy" and listed after the free ones.
+  const start = event.eventDatePrecision === 'day' ? event.eventDate : null
+  const end = start ? event.eventEndDate || start : null
+  const busyOn = (f) => (start ? (f.booked ?? []).find((b) => b.eventId !== event.id && b.start <= end && b.end >= start) : null)
   const all = (list.data?.items ?? []).filter((f) => f.status === 'active' && !taken.has(f.id))
+    .map((f) => ({ ...f, busy: busyOn(f) }))
+    .sort((a, b) => Number(Boolean(a.busy)) - Number(Boolean(b.busy)))
   const needle = q.trim().toLowerCase()
   const matches = needle ? all.filter((f) => f.name.toLowerCase().includes(needle)) : all.slice(0, 8)
   const dupIds = adding ? possibleDuplicates(values, list.data?.items ?? []) : []
@@ -124,7 +130,9 @@ function AssignPanel({ event, onClose, onDone }) {
               <li key={f.id}>
                 <span className="stack"><Link to={`/facilitators/${f.id}`}>{f.name}</Link>
                   <span className="muted">{f.eventsAttended} events · {rating(f)}</span></span>
-                <button type="button" className="btn btn--sm" onClick={() => pick(f)}>Assign</button>
+                {f.busy ? <span className="busy-tag" title="Already on another event that day">Busy that day</span>
+                  : start ? <span className="free-tag">Free</span> : null}
+                <button type="button" className={`btn btn--sm${f.busy ? '' : ' btn--primary'}`} onClick={() => pick(f)}>Assign</button>
               </li>
             ))}
           </ul>

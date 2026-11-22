@@ -129,36 +129,69 @@ function TopList({ rows, render }) {
   )
 }
 
-/** Staffing ratios: one facilitator per N participants, per brand and service (a suggestion on each event). */
+/**
+ * Staffing ratios: one facilitator per N participants, per brand and service (a suggestion on each event).
+ * One table per brand; change any numbers, then one "Save changes" (only the changed ones are sent).
+ */
 function Ratios({ ratios, setRatio }) {
   const [draft, setDraft] = useState({})
   const [message, setMessage] = useState(null)
-  const save = async (brand, service) => {
-    const key = `${brand}:${service}`
-    const raw = String(draft[key] ?? '').trim()
-    if (raw !== '' && !/^[1-9]\d*$/.test(raw)) { setMessage('Enter a whole number of participants (1 or more), or leave it empty.'); return }
-    const result = await setRatio(brand, service, raw === '' ? null : Number(raw))
-    if (result.ok) setDraft((d) => { const next = { ...d }; delete next[key]; return next })
-    setMessage(result.ok ? 'Saved.' : Object.values(result.errors ?? {})[0] ?? result.error)
+  const [busy, setBusy] = useState(false)
+  const changed = Object.entries(draft).filter(([key, v]) => String(v ?? '').trim() !== String(ratios[key] ?? ''))
+  const bad = changed.filter(([, v]) => String(v).trim() !== '' && !/^[1-9]\d*$/.test(String(v).trim()))
+  const saveAll = async () => {
+    if (bad.length) { setMessage({ tone: 'error', text: 'Use whole numbers (1 or more), or leave a box empty.' }); return }
+    setBusy(true)
+    let saved = 0
+    for (const [key, v] of changed) {
+      const [brand, service] = key.split(':')
+      const raw = String(v).trim()
+      const result = await setRatio(brand, service, raw === '' ? null : Number(raw))
+      if (!result.ok) {
+        setBusy(false)
+        setMessage({ tone: 'error', text: Object.values(result.errors ?? {})[0] ?? result.error })
+        return
+      }
+      saved += 1
+    }
+    setBusy(false)
+    setDraft({})
+    setMessage({ tone: 'ok', text: `Saved ${saved} ${saved === 1 ? 'ratio' : 'ratios'}.` })
   }
   return (
-    <Card title="Staffing ratios" subtitle="Suggested on each event: one facilitator per N participants">
-      {message && <p className="muted" role="status">{message}</p>}
-      <ul className="short-list">
-        {BRANDS.flatMap((b) => b.services.map((s) => {
-          const key = `${b.id}:${s.id}`
-          return (
-            <li key={key}>
-              <span>{b.name} · {s.label}</span>
-              <span className="ratio-edit">1 per{' '}
-                <input aria-label={`${b.name} ${s.label}: participants per facilitator`} inputMode="numeric" size={4}
-                  value={draft[key] ?? ratios[key] ?? ''} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))} /> participants
-                <button type="button" className="btn btn--sm" onClick={() => save(b.id, s.id)}>Save</button>
-              </span>
-            </li>
-          )
-        }))}
-      </ul>
+    <Card title="Staffing ratios" subtitle="Suggested on each event: one facilitator per N participants"
+      actions={changed.length > 0 ? (
+        <span className="ratio-actions">
+          <button type="button" className="link-btn" onClick={() => { setDraft({}); setMessage(null) }} disabled={busy}>Undo</button>
+          <button type="button" className="btn btn--sm btn--primary" onClick={saveAll} disabled={busy}>
+            {busy ? 'Saving…' : `Save ${changed.length} ${changed.length === 1 ? 'change' : 'changes'}`}
+          </button>
+        </span>
+      ) : null}>
+      {message && <p className={message.tone === 'error' ? 'form-field__error' : 'muted'} role="status">{message.text}</p>}
+      <div className="ratio-grid">
+        {BRANDS.map((b) => (
+          <section key={b.id} className="ratio-brand" aria-label={b.name}>
+            <h3 className="ratio-brand__title"><BrandTag brand={b.id} /></h3>
+            <ul className="ratio-list">
+              {b.services.map((s) => {
+                const key = `${b.id}:${s.id}`
+                const value = draft[key] ?? ratios[key] ?? ''
+                const isChanged = key in draft && String(draft[key]).trim() !== String(ratios[key] ?? '')
+                return (
+                  <li key={key} className={isChanged ? 'is-changed' : undefined}>
+                    <span>{s.label}</span>
+                    <span className="ratio-edit">1 per
+                      <input aria-label={`${b.name} ${s.label}: participants per facilitator`} inputMode="numeric" size={4}
+                        placeholder="—" value={value} onChange={(e) => { setMessage(null); setDraft((d) => ({ ...d, [key]: e.target.value })) }} />
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        ))}
+      </div>
     </Card>
   )
 }
